@@ -53,6 +53,40 @@ def mergeObjs(active, selected):
     x = bpy.ops.object.join(c)
 
 
+def getObjectBounds(object_name):
+    """
+    returns the corners of the bounding box of an object in world coordinates
+    """
+    # bpy.context.scene.update()
+    ob = bpy.context.scene.objects[object_name]
+    bbox_corners = [ob.matrix_world @
+                    Vector(corner) for corner in ob.bound_box]
+
+    # And now compute min/max values for those, which is what we really
+    # need for most uses
+    bbox_minmax = [
+        min([b[0] for b in bbox_corners]),  # x_min
+        max([b[0] for b in bbox_corners]),  # x_max
+        min([b[1] for b in bbox_corners]),  # y_min
+        max([b[1] for b in bbox_corners]),  # y_max
+        min([b[2] for b in bbox_corners]),  # z_min
+        max([b[2] for b in bbox_corners]),  # z_max
+    ]
+
+    return bbox_minmax
+
+
+# Figure out where the origin of our object should be, which should
+# generally be the center of the bottom face of the bounding box.
+def getObjectNewOrigin(object_name):
+    bb = getObjectBounds(object_name)
+    x = (bb[0] + bb[1]) / 2.0
+    y = (bb[2] + bb[3]) / 2.0
+    z = bb[4]
+
+    return [x, y, z]
+
+
 def main(argstr):
     input_name = ""
 
@@ -126,13 +160,18 @@ def main(argstr):
 
     mergeObjs(to_merge[0], to_merge)
 
+    obj = to_merge[0]
+    new_origin = getObjectNewOrigin(obj.name)
+    bpy.context.scene.cursor.location = Vector(new_origin)
+
     # FIXME: Figure out the right fields to set to do this with a context
     # override.
-    to_merge[0].select_set(True)
-    bpy.ops.object.origin_set(center='BOUNDS')
-    to_merge[0].select_set(False)
+    obj.select_set(True)
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+    obj.select_set(False)
 
-    to_merge[0].location = (0, 0, 0)
+    bpy.context.scene.cursor.location = Vector((0.0, 0.0, 0.0))
+    obj.location = Vector((0.0, 0.0, 0.0))
 
     print("saving %s.blend ..." % (basename))
     bpy.ops.wm.save_mainfile(filepath="%s.blend" % (basename))
