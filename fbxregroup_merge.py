@@ -199,16 +199,21 @@ def main(argstr):
     print("saving %s.blend ..." % (basename))
     bpy.ops.wm.save_mainfile(filepath="%s.blend" % (basename))
 
+    scene = bpy.data.scenes["Scene"]
+    world = scene.world
+
+    hdri_path = "green_point_park_2k.hdr"
+    # utils.build_environment_texture_background(world, hdri_path)
+
+    floor_object = utils.create_plane(size=12.0, name="Floor")
+
     # cam = create_camera(location=Vector((0.0, 0.0, 2.0)))
     utils.create_camera(location=Vector((2.0, 2.0, 5.0)))
-
-    # Current context object is the camera
     camera_object = bpy.context.object
 
     set_camera_params(camera_object.data, obj)
     utils.add_track_to_constraint(camera_object, obj)
 
-    scene = bpy.data.scenes["Scene"]
     num_samples = 16
     utils.set_output_properties(scene, 100, "test.png")
     utils.set_cycles_renderer(scene, camera_object,
