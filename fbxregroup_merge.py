@@ -8,8 +8,11 @@ import os
 import bpy
 
 from mathutils import Vector
+from typing import Tuple
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import utils
 # This script will take an fbx file (generally created by the fbxregroup.py
 # script, which generates one fbx file per kitbash 'object"), and:
 #   1. imports the fbx (duh)
@@ -30,6 +33,26 @@ from mathutils import Vector
 #
 # Actual code follows
 #
+def create_camera(location: Tuple[float, float, float]) -> bpy.types.Object:
+    bpy.ops.object.camera_add(location=location)
+
+    return bpy.context.object
+
+
+def set_camera_params(camera: bpy.types.Camera,
+                      focus_target_object: bpy.types.Object,
+                      lens: float = 85.0,
+                      fstop: float = 1.4) -> None:
+    # Simulate Sony's FE 85mm F1.4 GM
+    # camera.sensor_fit = 'HORIZONTAL'
+    camera.sensor_width = 36.0
+    camera.sensor_height = 24.0
+    camera.lens = lens
+    camera.dof.use_dof = True
+    camera.dof.focus_object = focus_target_object
+    camera.dof.aperture_fstop = fstop
+    camera.dof.aperture_blades = 11
+
 
 # Merge some objects into one object. Do this by creating a 'fake'
 # context object which will then be passed to join()
@@ -176,6 +199,25 @@ def main(argstr):
     print("saving %s.blend ..." % (basename))
     bpy.ops.wm.save_mainfile(filepath="%s.blend" % (basename))
 
+    # cam = create_camera(location=Vector((0.0, 0.0, 2.0)))
+    utils.create_camera(location=Vector((2.0, 2.0, 5.0)))
+
+    # Current context object is the camera
+    camera_object = bpy.context.object
+
+    set_camera_params(camera_object.data, obj)
+    utils.add_track_to_constraint(camera_object, obj)
+
+    scene = bpy.data.scenes["Scene"]
+    num_samples = 16
+    utils.set_output_properties(scene, 100, "test.png")
+    utils.set_cycles_renderer(scene, camera_object,
+                              num_samples, use_denoising=False)
+
+    # set_camera_params(camera=cam, focus_target_object=obj)
+
+    bpy.ops.render.render(animation=False, write_still=True,
+                          use_viewport=False)
     # bpy.ops.object.delete(use_global=False, confirm=True)
 
     # print("Opening %s.fbx ..." % (basename))
@@ -188,7 +230,7 @@ def main(argstr):
     # cycles = 0
 
     # print("done (%d --> %d)" % (start_objects, end_objects))
-    bpy.ops.wm.quit_blender()
+    # bpy.ops.wm.quit_blender()
 
 
 if __name__ == "__main__":
