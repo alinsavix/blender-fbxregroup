@@ -1,18 +1,72 @@
-# call via `blender --background --python thisfile.py -- -m <file>.fbx
+#!/usr/bin/env python3
+# call via `blender --background --factory-startup --python thisfile.py -- -m <file>.fbx
 #
-# Loads a file with some things. Makes vertex groups. Combines things.
+
 import getopt
 import re
 import sys
 import os
-import bpy
 
+print("argv: %s" % (sys.argv[1:]))
+# Sadly, can't define this later on, so it ends up having to sit right
+# in the middle of our imports!
+#
+# ? Should we redirect stdout/stderr before execing blender?
+#
+# ? Why does VSCode always want to add two blank lines before function?
+
+
+def execBlender(reason: str):
+    blender_bin = "blender"
+
+    from pathlib import Path
+    mypath = Path(__file__).resolve()
+
+    print("Not running under blender (%s)" % (reason))
+    print("Re-execing myself under blender (blender must exist in path)...")
+
+    blender_args = [
+        blender_bin,   # argv[0] -- called program name
+        "--background",
+        "--factory-startup",
+        "--python",
+        str(mypath),
+        "--",
+    ]
+
+    print("executing: %s" % " ".join((blender_args) + sys.argv[1:]))
+    try:
+        os.execvp(blender_bin, blender_args + sys.argv[1:1])
+    except OSError as e:
+        print("Couldn't exec blender: %s" % (e))
+        sys.exit(1)
+
+
+# Check if we're running under Blender ... and if not, fix that.
+# We both have to check to make sure we can import bpy, *and* check
+# to make sure there's something meaningful inside that module (like
+# an actual context) because there exist 'stub' bpy modules for
+# developing outside of blender, that will still import just fine...)
+try:
+    import bpy
+except ImportError as e:
+    execBlender("no bpy available")
+
+# It imported ok, so now check to see if we have a context object
+if bpy.context is None:
+    execBlender("no context available")
+
+# We have to do the above before trying to import other things,
+# because some other things might not be installed on system
+# python, and the 'utils' module tries to import bpy stuff (which
+# might not exist outside of the blender context)
 from mathutils import Vector
 from typing import Tuple
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 import utils
+
+
 # This script will take an fbx file (generally created by the fbxregroup.py
 # script, which generates one fbx file per kitbash 'object"), and:
 #   1. imports the fbx (duh)
@@ -37,21 +91,6 @@ def create_camera(location: Tuple[float, float, float]) -> bpy.types.Object:
     bpy.ops.object.camera_add(location=location)
 
     return bpy.context.object
-
-
-def set_camera_params(camera: bpy.types.Camera,
-                      focus_target_object: bpy.types.Object,
-                      lens: float = 85.0,
-                      fstop: float = 1.4) -> None:
-    # Simulate Sony's FE 85mm F1.4 GM
-    # camera.sensor_fit = 'HORIZONTAL'
-    camera.sensor_width = 36.0
-    camera.sensor_height = 24.0
-    camera.lens = lens
-    camera.dof.use_dof = True
-    camera.dof.focus_object = focus_target_object
-    camera.dof.aperture_fstop = fstop
-    camera.dof.aperture_blades = 11
 
 
 # Merge some objects into one object. Do this by creating a 'fake'
@@ -113,6 +152,8 @@ def getObjectNewOrigin(object_name):
 def main(argstr):
     input_name = ""
 
+    print(argstr)
+
     if (("--" in argstr) == False):
         print("Usage: blender --background --python thisfile.py -- -m <file>.fbx")
         return 1
@@ -135,12 +176,12 @@ def main(argstr):
             input_name = arg
 
     if (input_name == ""):
-        print("No input blend file(s) given")
+        print("No input file(s) given")
 
     file_re = re.compile("(.*).fbx", re.IGNORECASE)
     m = file_re.match(input_name)
     if not m:
-        print("Filename pattern not matched, did you specify an fbx file?")
+        print("Filename pattern not matched, did you specify an input file?")
         sys.exit(1)
     basename = m.groups(1)
 
@@ -202,8 +243,9 @@ def main(argstr):
     scene = bpy.data.scenes["Scene"]
     world = scene.world
 
-    hdri_path = "green_point_park_2k.hdr"
-    # utils.build_environment_texture_background(world, hdri_path)
+    # hdri_path = "green_point_park_2k.hdr"
+    hdri_path = "kloppenheim_03_2k.hdr"
+    utils.build_environment_texture_background(world, hdri_path)
 
     floor_object = utils.create_plane(size=12.0, name="Floor")
 
@@ -211,7 +253,7 @@ def main(argstr):
     utils.create_camera(location=Vector((2.0, 2.0, 5.0)))
     camera_object = bpy.context.object
 
-    set_camera_params(camera_object.data, obj)
+    utils.set_camera_params(camera_object.data, obj)
     utils.add_track_to_constraint(camera_object, obj)
 
     num_samples = 16
