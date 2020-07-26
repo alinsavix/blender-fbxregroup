@@ -36,7 +36,7 @@ def execBlender(reason: str):
 
     print("executing: %s" % " ".join((blender_args) + sys.argv[1:]))
     try:
-        os.execvp(blender_bin, blender_args + sys.argv[1:1])
+        os.execvp(blender_bin, blender_args + sys.argv[1:])
     except OSError as e:
         print("Couldn't exec blender: %s" % (e))
         sys.exit(1)
@@ -87,10 +87,38 @@ import utils
 #
 # Actual code follows
 #
-def create_camera(location: Tuple[float, float, float]) -> bpy.types.Object:
-    bpy.ops.object.camera_add(location=location)
+def add_material_simple(
+    name: str = "MaterialSimple",
+    diffuse_color: Tuple[float, float, float, float] = (0.8, 0.8, 0.8, 0.8),
+    metallic: float = 0.0,
+    refraction_depth: float = 0.0,
+    roughness: float = 0.4,
+    shadow_method: str = 'OPAQUE',
+    specular_color: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+    use_nodes: bool = False,
 
-    return bpy.context.object
+    # FIXME: Unknown type?
+    # cycles_material_settings: bpy.types.CyclesMaterialSettings = None,
+) -> bpy.types.Material:
+    """
+    https://docs.blender.org/api/current/bpy.types.BlendDataMaterials.html
+    https://docs.blender.org/api/current/bpy.types.Material.html
+    """
+
+    material = bpy.data.materials.new(name)
+    material.diffuse_color = diffuse_color
+    material.metallic = metallic
+    material.refraction_depth = refraction_depth
+    material.roughness = roughness
+    material.shadow_method = shadow_method
+    material.specular_color = specular_color
+    # material.cycles_material_settings = cycles_material_settings
+
+    material.use_nodes = use_nodes
+    if use_nodes:
+        utils.clean_nodes(material.node_tree.nodes)
+
+    return material
 
 
 # Merge some objects into one object. Do this by creating a 'fake'
@@ -243,14 +271,25 @@ def main(argstr):
     scene = bpy.data.scenes["Scene"]
     world = scene.world
 
-    # hdri_path = "green_point_park_2k.hdr"
-    hdri_path = "kloppenheim_03_2k.hdr"
+    # hdri_path = "hdris/green_point_park_2k.hdr"
+    # hdri_path = "hdris/kloppenheim_03_2k.hdr"
+    hdri_path = "hdris/photo_studio_01_1k.hdr"
     utils.build_environment_texture_background(world, hdri_path)
 
     floor_object = utils.create_plane(size=12.0, name="Floor")
 
+    mat = add_material_simple(name="MaterialSimple",
+                              diffuse_color=(0.8, 0.0, 0.0, 1.0))
+
+    if obj.data.materials:
+        # assign to 1st material slot
+        obj.data.materials[0] = mat
+    else:
+        # no slots
+        obj.data.materials.append(mat)
+
     # cam = create_camera(location=Vector((0.0, 0.0, 2.0)))
-    utils.create_camera(location=Vector((2.0, 2.0, 5.0)))
+    utils.create_camera(location=Vector((2.0, 2.0, 3.5)))
     camera_object = bpy.context.object
 
     utils.set_camera_params(camera_object.data, obj)
