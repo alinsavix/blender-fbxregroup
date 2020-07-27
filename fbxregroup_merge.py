@@ -268,15 +268,42 @@ def main(argstr):
     print("saving %s.blend ..." % (basename))
     bpy.ops.wm.save_mainfile(filepath="%s.blend" % (basename))
 
+    # Remember the object name, so we can pull it in later
+    obj_name = obj.name
+
+    # Build a scene and render
+    scene_path = "scenes/fbxregroup_render.blend"
+    bpy.ops.wm.open_mainfile(
+        filepath=scene_path, load_ui=False, use_scripts=False)
+
     scene = bpy.data.scenes["Scene"]
     world = scene.world
 
     # hdri_path = "hdris/green_point_park_2k.hdr"
     # hdri_path = "hdris/kloppenheim_03_2k.hdr"
-    hdri_path = "hdris/photo_studio_01_1k.hdr"
-    utils.build_environment_texture_background(world, hdri_path)
+    # hdri_path = "hdris/photo_studio_01_1k.hdr"
+    # utils.build_environment_texture_background(world=world, hdri_path=hdri_path,
+    #    brightness=1.4)
 
-    floor_object = utils.create_plane(size=12.0, name="Floor")
+    # floor_object = utils.create_plane(size=12.0, name="Floor")
+
+    # Link in the thing we just wrote out
+    # This strange selection of variables per stackexchange, at
+    # https://blender.stackexchange.com/a/38061/98544 . We should check to
+    # see if it could potentially be simplified.
+    blendfile = "%s.blend" % (basename)
+    section = "\\Object\\"
+    object = obj_name
+
+    filepath = blendfile + section + object
+    directory = blendfile + section
+    filename = object
+
+    bpy.ops.wm.append(filepath=filepath, filename=filename,
+                      directory=directory)
+
+    # Re-find our object
+    obj = bpy.data.objects[obj_name]
 
     mat = add_material_simple(name="MaterialSimple",
                               diffuse_color=(0.8, 0.0, 0.0, 1.0))
@@ -288,15 +315,16 @@ def main(argstr):
         # no slots
         obj.data.materials.append(mat)
 
-    # cam = create_camera(location=Vector((0.0, 0.0, 2.0)))
-    utils.create_camera(location=Vector((2.0, 2.0, 3.5)))
-    camera_object = bpy.context.object
+    # utils.create_camera(location=Vector((2.0, 2.0, 3.5)))
+    # camera_object = bpy.context.object
 
-    utils.set_camera_params(camera_object.data, obj)
-    utils.add_track_to_constraint(camera_object, obj)
+    # utils.set_camera_params(camera_object.data, obj)
+    # utils.add_track_to_constraint(camera_object, obj)
+    camera_object = bpy.data.objects["Camera"]
 
     num_samples = 16
-    utils.set_output_properties(scene, 100, "test.png")
+    utils.set_output_properties(scene=scene, resolution_percentage=100,
+                                output_file_path="test.png")
     utils.set_cycles_renderer(scene, camera_object,
                               num_samples, use_denoising=False)
 

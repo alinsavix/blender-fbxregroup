@@ -168,3 +168,6 @@ dmypy.json
 ### VisualStudioCode Patch ###
 # Ignore all local history of files
 .history
+
+### Blender
+*.blend[0-9]*

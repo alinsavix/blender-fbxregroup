@@ -22,7 +22,8 @@ def create_text(
     rotation: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 ) -> bpy.types.Object:
 
-    new_text_data: bpy.types.Curve = bpy.data.curves.new(name=name, type='FONT')
+    new_text_data: bpy.types.Curve = bpy.data.curves.new(
+        name=name, type='FONT')
 
     new_text_data.body = body
     new_text_data.align_x = align_x
@@ -36,7 +37,8 @@ def create_text(
     scene.collection.objects.link(new_object)
 
     new_object.location = location
-    new_object.rotation_euler = (math.pi * rotation[0] / 180.0, math.pi * rotation[1] / 180.0, math.pi * rotation[2])
+    new_object.rotation_euler = (
+        math.pi * rotation[0] / 180.0, math.pi * rotation[1] / 180.0, math.pi * rotation[2])
 
     return new_object
 
@@ -68,16 +70,18 @@ def build_rgb_background(world: bpy.types.World,
 
     node_tree.nodes["Background"].inputs["Strength"].default_value = strength
 
-    node_tree.links.new(rgb_node.outputs["Color"], node_tree.nodes["Background"].inputs["Color"])
+    node_tree.links.new(
+        rgb_node.outputs["Color"], node_tree.nodes["Background"].inputs["Color"])
 
     arrange_nodes(node_tree)
 
 
-def build_environment_texture_background(world: bpy.types.World, hdri_path: str, rotation: float = 0.0) -> None:
+def build_environment_texture_background(world: bpy.types.World, hdri_path: str, rotation: float = 0.0, brightness: float = 0.0) -> None:
     world.use_nodes = True
     node_tree = world.node_tree
 
-    environment_texture_node = node_tree.nodes.new(type="ShaderNodeTexEnvironment")
+    environment_texture_node = node_tree.nodes.new(
+        type="ShaderNodeTexEnvironment")
     environment_texture_node.image = bpy.data.images.load(hdri_path)
 
     mapping_node = node_tree.nodes.new(type="ShaderNodeMapping")
@@ -88,9 +92,17 @@ def build_environment_texture_background(world: bpy.types.World, hdri_path: str,
 
     tex_coord_node = node_tree.nodes.new(type="ShaderNodeTexCoord")
 
-    node_tree.links.new(tex_coord_node.outputs["Generated"], mapping_node.inputs["Vector"])
-    node_tree.links.new(mapping_node.outputs["Vector"], environment_texture_node.inputs["Vector"])
-    node_tree.links.new(environment_texture_node.outputs["Color"], node_tree.nodes["Background"].inputs["Color"])
+    brightness_node = node_tree.nodes.new(type="ShaderNodeBrightContrast")
+    brightness_node.inputs["Bright"].default_value = brightness
+
+    node_tree.links.new(
+        tex_coord_node.outputs["Generated"], mapping_node.inputs["Vector"])
+    node_tree.links.new(
+        mapping_node.outputs["Vector"], environment_texture_node.inputs["Vector"])
+    node_tree.links.new(
+        environment_texture_node.outputs["Color"], brightness_node.inputs["Color"])
+    node_tree.links.new(
+        brightness_node.outputs["Color"], node_tree.nodes["Background"].inputs["Color"])
 
     arrange_nodes(node_tree)
 
