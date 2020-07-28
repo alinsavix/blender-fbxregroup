@@ -3,6 +3,7 @@
 #
 
 import getopt
+import math
 import re
 import sys
 import os
@@ -87,6 +88,29 @@ import utils
 #
 # Actual code follows
 #
+colorlist = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4',
+             '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff',
+             '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1',
+             '#000075', '#808080', '#ffffff', '#000000']
+
+# FIXME: Right now alpha is always 1.0 ... should that be different?
+
+
+def colorHexToFloat(h: str) -> Tuple:
+    h = h.lstrip('#')
+    r, g, b = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return tuple((r / 255.0, g / 255.0, b / 255.0, 1.0))
+
+
+def colorNext() -> Tuple:
+    colorNext.colors = vars(colorNext).setdefault('colors', colorlist.copy())
+    v = colorNext.colors.pop(0)
+    if len(colorNext.colors) == 0:
+        colorNext.colors = colorlist.copy()
+
+    return colorHexToFloat(v)
+
+
 def add_material_simple(
     name: str = "MaterialSimple",
     diffuse_color: Tuple[float, float, float, float] = (0.8, 0.8, 0.8, 0.8),
@@ -120,9 +144,10 @@ def add_material_simple(
 
     return material
 
-
 # Merge some objects into one object. Do this by creating a 'fake'
 # context object which will then be passed to join()
+
+
 def deleteObj(obj):
     c = {}
     c["object"] = c["active_object"] = obj
@@ -272,7 +297,8 @@ def main(argstr):
     obj_name = obj.name
 
     # Build a scene and render
-    scene_path = "scenes/fbxregroup_render.blend"
+    # scene_path = "scenes/fbxregroup_render.blend"
+    scene_path = "scenes/matcap_library_demo_scene.blend"
     bpy.ops.wm.open_mainfile(
         filepath=scene_path, load_ui=False, use_scripts=False)
 
@@ -304,9 +330,30 @@ def main(argstr):
 
     # Re-find our object
     obj = bpy.data.objects[obj_name]
+    # obj.location = bpy.data.objects["Placeholder"].location
+    obj.location = Vector((0.0, 0.0, 0.005))
+    obj.rotation_euler = Vector((0.0, 0.0, math.pi / 4))
 
-    mat = add_material_simple(name="MaterialSimple",
-                              diffuse_color=(0.8, 0.0, 0.0, 1.0))
+    # mat = add_material_simple(name="MaterialSimple",
+    #                           diffuse_color=(0.8, 0.0, 0.0, 1.0))
+
+    mat = utils.add_material("Material", use_nodes=True,
+                             make_node_tree_empty=True)
+
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    output_node = nodes.new(type='ShaderNodeOutputMaterial')
+
+    principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
+    utils.set_principled_node(
+        principled_node=principled_node,
+        base_color=colorNext(),
+        metallic=0.5,
+        # specular=0.5,
+        roughness=0.1,
+    )
+
+    links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
 
     if obj.data.materials:
         # assign to 1st material slot
