@@ -4,6 +4,7 @@
 
 import getopt
 import math
+from pprint import pprint
 import re
 import sys
 import os
@@ -109,6 +110,40 @@ def colorNext() -> Tuple:
         colorNext.colors = colorlist.copy()
 
     return colorHexToFloat(v)
+
+
+# FIXME: wtf is a good name for this? Both 'get' and 'create' are
+# not quite right...
+def materialGetIndex(obj: bpy.types.Object, matname: str) -> int:
+    index = obj.material_slots.find(matname)
+    if index != -1:
+        # print("found mat: %s (index %d)" % (matname, index))
+        return index
+
+    mat = utils.add_material(matname, use_nodes=True,
+                             make_node_tree_empty=True)
+
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    output_node = nodes.new(type='ShaderNodeOutputMaterial')
+
+    principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
+    utils.set_principled_node(
+        principled_node=principled_node,
+        base_color=colorNext(),
+        metallic=0.5,
+        specular=0.5,
+        roughness=0.1,
+    )
+
+    links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
+
+    obj.data.materials.append(mat)
+
+    # FIXME: Can this fail?
+    index = obj.material_slots.find(matname)
+    # print("returning new mat %s, index: %d" % (matname, index))
+    return index
 
 
 def add_material_simple(
@@ -334,34 +369,61 @@ def main(argstr):
     obj.location = Vector((0.0, 0.0, 0.005))
     obj.rotation_euler = Vector((0.0, 0.0, math.pi / 4))
 
+    # FIXME: Should probably put this in a subroutine
+    for p in obj.data.polygons:
+        # Get all the vertex groups of all the vertices of this polygon
+        verts_vertexGroups = [
+            g.group for v in p.vertices for g in obj.data.vertices[v].groups]
+
+        # Find the most frequent (mode) of all vertex groups
+        counts = [verts_vertexGroups.count(idx) for idx in verts_vertexGroups]
+        modeIndex = counts.index(max(counts))
+        mode = verts_vertexGroups[modeIndex]
+
+        groupName = obj.vertex_groups[mode].name
+
+        # Now find the material slot with the same VG's name
+        # ms_index = obj.material_slots.find(groupName)
+        ms_index = materialGetIndex(obj, groupName)
+
+        # Set material to polygon
+        if ms_index != -1:  # material found
+            p.material_index = ms_index
+        else:
+            print("no material for %s (shouldn't happen)" % (groupName))
+
     # mat = add_material_simple(name="MaterialSimple",
     #                           diffuse_color=(0.8, 0.0, 0.0, 1.0))
 
-    mat = utils.add_material("Material", use_nodes=True,
-                             make_node_tree_empty=True)
+    if False:
+        mat = utils.add_material("Material", use_nodes=True,
+                                 make_node_tree_empty=True)
 
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    output_node = nodes.new(type='ShaderNodeOutputMaterial')
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+        output_node = nodes.new(type='ShaderNodeOutputMaterial')
 
-    principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
-    utils.set_principled_node(
-        principled_node=principled_node,
-        base_color=colorNext(),
-        metallic=0.5,
-        # specular=0.5,
-        roughness=0.1,
-    )
+        principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
+        utils.set_principled_node(
+            principled_node=principled_node,
+            base_color=colorNext(),
+            metallic=0.5,
+            # specular=0.5,
+            roughness=0.1,
+        )
 
-    links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
+        links.new(principled_node.outputs['BSDF'],
+                  output_node.inputs['Surface'])
 
-    if obj.data.materials:
-        # assign to 1st material slot
-        obj.data.materials[0] = mat
-    else:
-        # no slots
-        obj.data.materials.append(mat)
+        if obj.data.materials:
+            # assign to 1st material slot
+            obj.data.materials[0] = mat
+        else:
+            # no slots
+            obj.data.materials.append(mat)
 
+    # print(obj.data.materials.keys())
+    # sys.exit(0)
     # utils.create_camera(location=Vector((2.0, 2.0, 3.5)))
     # camera_object = bpy.context.object
 
