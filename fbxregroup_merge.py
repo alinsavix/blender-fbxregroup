@@ -96,7 +96,7 @@ import utils
 #              '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1',
 #              '#000075', '#808080', '#ffffff', '#000000']
 
-colorlist = ["#FFFFFF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059",
+colorlist = ["#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059",
              "#FFDBE5", "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43",
              "#8FB0FF", "#997D87", "#5A0007", "#809693", "#FEFFE6", "#1B4400",
              "#4FC601", "#3B5DFF", "#4A3B53", "#FF2F80", "#61615A", "#BA0900",
@@ -249,6 +249,21 @@ def getObjectNewOrigin(object_name):
     z = bb[4]
 
     return [x, y, z]
+
+
+# Figure out how big the object bounding box is along the diagonal,
+# to help with fitting it on-camera. We only care about X and Y (really
+# tall objects go home)
+def getDiagonalLength(object_name):
+    bbox = getObjectBounds(object_name)
+
+    # PYTHAGORAS TIME!
+    # FIXME: There's probably a better way
+    a = abs(bbox[1] - bbox[0])
+    b = abs(bbox[3] - bbox[2])
+
+    c = math.sqrt(math.pow(a, 2) + math.pow(b, 2))
+    return c
 
 
 def main(argstr):
@@ -443,16 +458,36 @@ def main(argstr):
 
     # utils.set_camera_params(camera_object.data, obj)
     # utils.add_track_to_constraint(camera_object, obj)
-    camera_object = bpy.data.objects["Camera"]
+    camera = bpy.data.objects["Camera"]
+
+    output_file = "%s.png" % (basename)
+    utils.set_output_properties(scene=scene, resolution_percentage=100,
+                                output_file_path=output_file)
 
     num_samples = 16
-    utils.set_output_properties(scene=scene, resolution_percentage=100,
-                                output_file_path="test.png")
-    utils.set_cycles_renderer(scene, camera_object,
+    utils.set_cycles_renderer(scene, camera,
                               num_samples, use_denoising=False)
 
-    # set_camera_params(camera=cam, focus_target_object=obj)
+    # At 85mm, a 0.7944-blender-unit diagonal, you get a 290px wide
+    # object (with a 512px wide image). Lets use that as kind of a
+    # target.
+    #
+    # FIXME: Round out these normals
+    diag = getDiagonalLength(obj.name)
+    target_diag = 0.7944
+    diffpct = diag / target_diag
+    camera_distance = 5.0
 
+    # FIXME: What is a good min/max for this?
+    # camera.data.lens = 85.0 / diffpct
+    camera.data.lens = max(85.0 / diffpct, 20.0)
+    camera.data.lens = min(camera.data.lens, 500.0)
+    print("diagonal length is %f" % (getDiagonalLength(obj.name)))
+    print("lens length divisor is %f, final length %f" %
+          (diffpct, camera.data.lens))
+
+    # set_camera_params(camera=cam, focus_target_object=obj)
+    # camera.data.lens = 85.0
     bpy.ops.render.render(animation=False, write_still=True,
                           use_viewport=False)
     # bpy.ops.object.delete(use_global=False, confirm=True)
