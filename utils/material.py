@@ -18,10 +18,13 @@ def create_texture_node(node_tree: bpy.types.NodeTree, path: str, is_color_data:
 
 
 def set_principled_node(principled_node: bpy.types.Node,
-                        base_color: Tuple[float, float, float, float] = (0.6, 0.6, 0.6, 1.0),
+                        base_color: Tuple[float, float, float, float] = (
+                            0.6, 0.6, 0.6, 1.0),
                         subsurface: float = 0.0,
-                        subsurface_color: Tuple[float, float, float, float] = (0.8, 0.8, 0.8, 1.0),
-                        subsurface_radius: Tuple[float, float, float] = (1.0, 0.2, 0.1),
+                        subsurface_color: Tuple[float, float, float, float] = (
+                            0.8, 0.8, 0.8, 1.0),
+                        subsurface_radius: Tuple[float, float, float] = (
+                            1.0, 0.2, 0.1),
                         metallic: float = 0.0,
                         specular: float = 0.5,
                         specular_tint: float = 0.0,
@@ -55,14 +58,16 @@ def set_principled_node(principled_node: bpy.types.Node,
 
 
 def build_pbr_nodes(node_tree: bpy.types.NodeTree,
-                    base_color: Tuple[float, float, float, float] = (0.6, 0.6, 0.6, 1.0),
+                    base_color: Tuple[float, float, float,
+                                      float] = (0.6, 0.6, 0.6, 1.0),
                     metallic: float = 0.0,
                     specular: float = 0.5,
                     roughness: float = 0.5,
                     sheen: float = 0.0) -> None:
     output_node = node_tree.nodes.new(type='ShaderNodeOutputMaterial')
     principled_node = node_tree.nodes.new(type='ShaderNodeBsdfPrincipled')
-    node_tree.links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
+    node_tree.links.new(
+        principled_node.outputs['BSDF'], output_node.inputs['Surface'])
 
     set_principled_node(principled_node=principled_node,
                         base_color=base_color,
@@ -82,15 +87,18 @@ def build_checker_board_nodes(node_tree: bpy.types.NodeTree, size: float) -> Non
     set_principled_node(principled_node=principled_node)
     checker_texture_node.inputs['Scale'].default_value = size
 
-    node_tree.links.new(checker_texture_node.outputs['Color'], principled_node.inputs['Base Color'])
-    node_tree.links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
+    node_tree.links.new(
+        checker_texture_node.outputs['Color'], principled_node.inputs['Base Color'])
+    node_tree.links.new(
+        principled_node.outputs['BSDF'], output_node.inputs['Surface'])
 
     arrange_nodes(node_tree)
 
 
 def build_matcap_nodes(node_tree: bpy.types.NodeTree, image_path: str) -> None:
     tex_coord_node = node_tree.nodes.new(type='ShaderNodeTexCoord')
-    vector_transform_node = node_tree.nodes.new(type='ShaderNodeVectorTransform')
+    vector_transform_node = node_tree.nodes.new(
+        type='ShaderNodeVectorTransform')
     mapping_node = node_tree.nodes.new(type='ShaderNodeMapping')
     texture_image_node = create_texture_node(node_tree, image_path, True)
     emmission_node = node_tree.nodes.new(type='ShaderNodeEmission')
@@ -112,11 +120,16 @@ def build_matcap_nodes(node_tree: bpy.types.NodeTree, image_path: str) -> None:
         mapping_node.translation = (1.0, 1.0, 0.0)
         mapping_node.scale = (2.0, 2.0, 1.0)
 
-    node_tree.links.new(tex_coord_node.outputs['Normal'], vector_transform_node.inputs['Vector'])
-    node_tree.links.new(vector_transform_node.outputs['Vector'], mapping_node.inputs['Vector'])
-    node_tree.links.new(mapping_node.outputs['Vector'], texture_image_node.inputs['Vector'])
-    node_tree.links.new(texture_image_node.outputs['Color'], emmission_node.inputs['Color'])
-    node_tree.links.new(emmission_node.outputs['Emission'], output_node.inputs['Surface'])
+    node_tree.links.new(
+        tex_coord_node.outputs['Normal'], vector_transform_node.inputs['Vector'])
+    node_tree.links.new(
+        vector_transform_node.outputs['Vector'], mapping_node.inputs['Vector'])
+    node_tree.links.new(
+        mapping_node.outputs['Vector'], texture_image_node.inputs['Vector'])
+    node_tree.links.new(
+        texture_image_node.outputs['Color'], emmission_node.inputs['Color'])
+    node_tree.links.new(
+        emmission_node.outputs['Emission'], output_node.inputs['Surface'])
 
     arrange_nodes(node_tree)
 
@@ -132,55 +145,78 @@ def build_pbr_textured_nodes(
         scale: Tuple[float, float, float] = (1.0, 1.0, 1.0)) -> None:
     output_node = node_tree.nodes.new(type='ShaderNodeOutputMaterial')
     principled_node = node_tree.nodes.new(type='ShaderNodeBsdfPrincipled')
-    node_tree.links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
+    node_tree.links.new(
+        principled_node.outputs['BSDF'], output_node.inputs['Surface'])
 
     coord_node = node_tree.nodes.new(type='ShaderNodeTexCoord')
     mapping_node = node_tree.nodes.new(type='ShaderNodeMapping')
     mapping_node.vector_type = 'TEXTURE'
     mapping_node.scale = scale
-    node_tree.links.new(coord_node.outputs['UV'], mapping_node.inputs['Vector'])
+    node_tree.links.new(
+        coord_node.outputs['UV'], mapping_node.inputs['Vector'])
 
     if color_texture_path != "":
         texture_node = create_texture_node(node_tree, color_texture_path, True)
-        node_tree.links.new(mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
+        node_tree.links.new(
+            mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
         if ambient_occlusion_texture_path != "":
-            ao_texture_node = create_texture_node(node_tree, ambient_occlusion_texture_path, False)
-            node_tree.links.new(mapping_node.outputs['Vector'], ao_texture_node.inputs['Vector'])
+            ao_texture_node = create_texture_node(
+                node_tree, ambient_occlusion_texture_path, False)
+            node_tree.links.new(
+                mapping_node.outputs['Vector'], ao_texture_node.inputs['Vector'])
             mix_node = node_tree.nodes.new(type='ShaderNodeMixRGB')
             mix_node.blend_type = 'MULTIPLY'
-            node_tree.links.new(texture_node.outputs['Color'], mix_node.inputs['Color1'])
-            node_tree.links.new(ao_texture_node.outputs['Color'], mix_node.inputs['Color2'])
-            node_tree.links.new(mix_node.outputs['Color'], principled_node.inputs['Base Color'])
+            node_tree.links.new(
+                texture_node.outputs['Color'], mix_node.inputs['Color1'])
+            node_tree.links.new(
+                ao_texture_node.outputs['Color'], mix_node.inputs['Color2'])
+            node_tree.links.new(
+                mix_node.outputs['Color'], principled_node.inputs['Base Color'])
         else:
-            node_tree.links.new(texture_node.outputs['Color'], principled_node.inputs['Base Color'])
+            node_tree.links.new(
+                texture_node.outputs['Color'], principled_node.inputs['Base Color'])
 
     if metallic_texture_path != "":
-        texture_node = create_texture_node(node_tree, metallic_texture_path, False)
-        node_tree.links.new(mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
-        node_tree.links.new(texture_node.outputs['Color'], principled_node.inputs['Metallic'])
+        texture_node = create_texture_node(
+            node_tree, metallic_texture_path, False)
+        node_tree.links.new(
+            mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
+        node_tree.links.new(
+            texture_node.outputs['Color'], principled_node.inputs['Metallic'])
 
     if roughness_texture_path != "":
-        texture_node = create_texture_node(node_tree, roughness_texture_path, False)
-        node_tree.links.new(mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
-        node_tree.links.new(texture_node.outputs['Color'], principled_node.inputs['Roughness'])
+        texture_node = create_texture_node(
+            node_tree, roughness_texture_path, False)
+        node_tree.links.new(
+            mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
+        node_tree.links.new(
+            texture_node.outputs['Color'], principled_node.inputs['Roughness'])
 
     if normal_texture_path != "":
-        texture_node = create_texture_node(node_tree, normal_texture_path, False)
-        node_tree.links.new(mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
+        texture_node = create_texture_node(
+            node_tree, normal_texture_path, False)
+        node_tree.links.new(
+            mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
         normal_map_node = node_tree.nodes.new(type='ShaderNodeNormalMap')
-        node_tree.links.new(texture_node.outputs['Color'], normal_map_node.inputs['Color'])
-        node_tree.links.new(normal_map_node.outputs['Normal'], principled_node.inputs['Normal'])
+        node_tree.links.new(
+            texture_node.outputs['Color'], normal_map_node.inputs['Color'])
+        node_tree.links.new(
+            normal_map_node.outputs['Normal'], principled_node.inputs['Normal'])
 
     if displacement_texture_path != "":
-        texture_node = create_texture_node(node_tree, displacement_texture_path, False)
-        node_tree.links.new(mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
-        node_tree.links.new(texture_node.outputs['Color'], output_node.inputs['Displacement'])
+        texture_node = create_texture_node(
+            node_tree, displacement_texture_path, False)
+        node_tree.links.new(
+            mapping_node.outputs['Vector'], texture_node.inputs['Vector'])
+        node_tree.links.new(
+            texture_node.outputs['Color'], output_node.inputs['Displacement'])
 
     arrange_nodes(node_tree)
 
 
 def add_parametric_color_ramp() -> bpy.types.NodeGroup:
-    group = bpy.data.node_groups.new(type="ShaderNodeTree", name="Parametric Color Ramp")
+    group = bpy.data.node_groups.new(
+        type="ShaderNodeTree", name="Parametric Color Ramp")
 
     # Input
 
@@ -209,14 +245,20 @@ def add_parametric_color_ramp() -> bpy.types.NodeGroup:
     divide_node.operation = "DIVIDE"
     divide_node.use_clamp = True
 
-    group.links.new(input_node.outputs["Pos2"], denominator_subtract_node.inputs[0])
-    group.links.new(input_node.outputs["Fac"], denominator_subtract_node.inputs[1])
+    group.links.new(input_node.outputs["Pos2"],
+                    denominator_subtract_node.inputs[0])
+    group.links.new(input_node.outputs["Fac"],
+                    denominator_subtract_node.inputs[1])
 
-    group.links.new(input_node.outputs["Pos2"], numerator_subtract_node.inputs[0])
-    group.links.new(input_node.outputs["Pos1"], numerator_subtract_node.inputs[1])
+    group.links.new(input_node.outputs["Pos2"],
+                    numerator_subtract_node.inputs[0])
+    group.links.new(input_node.outputs["Pos1"],
+                    numerator_subtract_node.inputs[1])
 
-    group.links.new(denominator_subtract_node.outputs["Value"], divide_node.inputs[0])
-    group.links.new(numerator_subtract_node.outputs["Value"], divide_node.inputs[1])
+    group.links.new(
+        denominator_subtract_node.outputs["Value"], divide_node.inputs[0])
+    group.links.new(
+        numerator_subtract_node.outputs["Value"], divide_node.inputs[1])
 
     # Mixing
 
@@ -256,7 +298,8 @@ def create_parametric_color_ramp_node(node_tree: bpy.types.NodeTree) -> bpy.type
 
 
 def add_tri_parametric_color_ramp() -> bpy.types.NodeGroup:
-    group = bpy.data.node_groups.new(type="ShaderNodeTree", name="Tri Parametric Color Ramp")
+    group = bpy.data.node_groups.new(
+        type="ShaderNodeTree", name="Tri Parametric Color Ramp")
 
     # Input
 
@@ -278,11 +321,16 @@ def add_tri_parametric_color_ramp() -> bpy.types.NodeGroup:
 
     nested_color_ramp_node = create_parametric_color_ramp_node(group)
 
-    group.links.new(input_node.outputs["Color1"], nested_color_ramp_node.inputs["Color1"])
-    group.links.new(input_node.outputs["Color2"], nested_color_ramp_node.inputs["Color2"])
-    group.links.new(input_node.outputs["Pos1"], nested_color_ramp_node.inputs["Pos1"])
-    group.links.new(input_node.outputs["Pos2"], nested_color_ramp_node.inputs["Pos2"])
-    group.links.new(input_node.outputs["Fac"], nested_color_ramp_node.inputs["Fac"])
+    group.links.new(input_node.outputs["Color1"],
+                    nested_color_ramp_node.inputs["Color1"])
+    group.links.new(input_node.outputs["Color2"],
+                    nested_color_ramp_node.inputs["Color2"])
+    group.links.new(input_node.outputs["Pos1"],
+                    nested_color_ramp_node.inputs["Pos1"])
+    group.links.new(input_node.outputs["Pos2"],
+                    nested_color_ramp_node.inputs["Pos2"])
+    group.links.new(input_node.outputs["Fac"],
+                    nested_color_ramp_node.inputs["Fac"])
 
     # Math
 
@@ -298,14 +346,20 @@ def add_tri_parametric_color_ramp() -> bpy.types.NodeGroup:
     divide_node.operation = "DIVIDE"
     divide_node.use_clamp = True
 
-    group.links.new(input_node.outputs["Pos3"], denominator_subtract_node.inputs[0])
-    group.links.new(input_node.outputs["Fac"], denominator_subtract_node.inputs[1])
+    group.links.new(input_node.outputs["Pos3"],
+                    denominator_subtract_node.inputs[0])
+    group.links.new(input_node.outputs["Fac"],
+                    denominator_subtract_node.inputs[1])
 
-    group.links.new(input_node.outputs["Pos3"], numerator_subtract_node.inputs[0])
-    group.links.new(input_node.outputs["Pos2"], numerator_subtract_node.inputs[1])
+    group.links.new(input_node.outputs["Pos3"],
+                    numerator_subtract_node.inputs[0])
+    group.links.new(input_node.outputs["Pos2"],
+                    numerator_subtract_node.inputs[1])
 
-    group.links.new(denominator_subtract_node.outputs["Value"], divide_node.inputs[0])
-    group.links.new(numerator_subtract_node.outputs["Value"], divide_node.inputs[1])
+    group.links.new(
+        denominator_subtract_node.outputs["Value"], divide_node.inputs[0])
+    group.links.new(
+        numerator_subtract_node.outputs["Value"], divide_node.inputs[1])
 
     # Mixing
 
@@ -313,7 +367,8 @@ def add_tri_parametric_color_ramp() -> bpy.types.NodeGroup:
 
     group.links.new(divide_node.outputs["Value"], mix_node.inputs["Fac"])
     group.links.new(input_node.outputs["Color3"], mix_node.inputs[1])
-    group.links.new(nested_color_ramp_node.outputs["Color"], mix_node.inputs[2])
+    group.links.new(
+        nested_color_ramp_node.outputs["Color"], mix_node.inputs[2])
 
     # Output
 
@@ -345,7 +400,8 @@ def create_tri_parametric_color_ramp_node(node_tree: bpy.types.NodeTree) -> bpy.
 
 
 def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
-    group = bpy.data.node_groups.new(type="ShaderNodeTree", name="Peeling Paint Metal")
+    group = bpy.data.node_groups.new(
+        type="ShaderNodeTree", name="Peeling Paint Metal")
 
     input_node = group.nodes.new(type="NodeGroupInput")
     group.inputs.new("NodeSocketColor", "Paint Color")
@@ -364,29 +420,40 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     set_socket_value_range(group.inputs["Paint Roughness"], default_value=0.05)
     set_socket_value_range(group.inputs["Metal Roughness"], default_value=0.50)
 
-    set_socket_value_range(group.inputs["Scale"], default_value=4.5, min_value=0.0, max_value=1000.0)
-    set_socket_value_range(group.inputs["Detail"], default_value=8.0, min_value=0.0, max_value=16.0)
-    set_socket_value_range(group.inputs["Distortion"], default_value=0.5, min_value=0.0, max_value=1000.0)
+    set_socket_value_range(
+        group.inputs["Scale"], default_value=4.5, min_value=0.0, max_value=1000.0)
+    set_socket_value_range(
+        group.inputs["Detail"], default_value=8.0, min_value=0.0, max_value=16.0)
+    set_socket_value_range(
+        group.inputs["Distortion"], default_value=0.5, min_value=0.0, max_value=1000.0)
     set_socket_value_range(group.inputs["Threshold"], default_value=0.42)
-    set_socket_value_range(group.inputs["Peel Intense"], default_value=0.2, min_value=0.0, max_value=1.0)
+    set_socket_value_range(
+        group.inputs["Peel Intense"], default_value=0.2, min_value=0.0, max_value=1.0)
 
     tex_coord_node = group.nodes.new(type="ShaderNodeTexCoord")
     mapping_node = group.nodes.new(type="ShaderNodeMapping")
 
-    group.links.new(tex_coord_node.outputs["Object"], mapping_node.inputs["Vector"])
+    group.links.new(
+        tex_coord_node.outputs["Object"], mapping_node.inputs["Vector"])
 
     # Peeling region segmentation
 
     peeling_noise_node = group.nodes.new(type="ShaderNodeTexNoise")
 
-    group.links.new(mapping_node.outputs["Vector"], peeling_noise_node.inputs["Vector"])
-    group.links.new(input_node.outputs["Scale"], peeling_noise_node.inputs["Scale"])
-    group.links.new(input_node.outputs["Detail"], peeling_noise_node.inputs["Detail"])
-    group.links.new(input_node.outputs["Distortion"], peeling_noise_node.inputs["Distortion"])
+    group.links.new(
+        mapping_node.outputs["Vector"], peeling_noise_node.inputs["Vector"])
+    group.links.new(input_node.outputs["Scale"],
+                    peeling_noise_node.inputs["Scale"])
+    group.links.new(input_node.outputs["Detail"],
+                    peeling_noise_node.inputs["Detail"])
+    group.links.new(
+        input_node.outputs["Distortion"], peeling_noise_node.inputs["Distortion"])
 
     peeling_threshold_node = create_parametric_color_ramp_node(group)
-    peeling_threshold_node.inputs["Color1"].default_value = (0.0, 0.0, 0.0, 1.0)
-    peeling_threshold_node.inputs["Color2"].default_value = (1.0, 1.0, 1.0, 1.0)
+    peeling_threshold_node.inputs["Color1"].default_value = (
+        0.0, 0.0, 0.0, 1.0)
+    peeling_threshold_node.inputs["Color2"].default_value = (
+        1.0, 1.0, 1.0, 1.0)
 
     # Base color
 
@@ -394,16 +461,23 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     epsilon_subtract_node.operation = "SUBTRACT"
     epsilon_subtract_node.inputs[1].default_value = 0.001
 
-    group.links.new(input_node.outputs["Threshold"], epsilon_subtract_node.inputs[0])
+    group.links.new(input_node.outputs["Threshold"],
+                    epsilon_subtract_node.inputs[0])
 
-    group.links.new(peeling_noise_node.outputs["Fac"], peeling_threshold_node.inputs["Fac"])
-    group.links.new(epsilon_subtract_node.outputs["Value"], peeling_threshold_node.inputs["Pos1"])
-    group.links.new(input_node.outputs["Threshold"], peeling_threshold_node.inputs["Pos2"])
+    group.links.new(
+        peeling_noise_node.outputs["Fac"], peeling_threshold_node.inputs["Fac"])
+    group.links.new(
+        epsilon_subtract_node.outputs["Value"], peeling_threshold_node.inputs["Pos1"])
+    group.links.new(input_node.outputs["Threshold"],
+                    peeling_threshold_node.inputs["Pos2"])
 
     color_mix_node = group.nodes.new(type="ShaderNodeMixRGB")
-    group.links.new(peeling_threshold_node.outputs["Color"], color_mix_node.inputs["Fac"])
-    group.links.new(input_node.outputs["Metal Color"], color_mix_node.inputs[1])
-    group.links.new(input_node.outputs["Paint Color"], color_mix_node.inputs[2])
+    group.links.new(
+        peeling_threshold_node.outputs["Color"], color_mix_node.inputs["Fac"])
+    group.links.new(
+        input_node.outputs["Metal Color"], color_mix_node.inputs[1])
+    group.links.new(
+        input_node.outputs["Paint Color"], color_mix_node.inputs[2])
 
     # Ambient occulusion
 
@@ -411,13 +485,15 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     epsilon_add_node.operation = "ADD"
     epsilon_add_node.inputs[1].default_value = 0.010
 
-    group.links.new(input_node.outputs["Threshold"], epsilon_add_node.inputs[0])
+    group.links.new(
+        input_node.outputs["Threshold"], epsilon_add_node.inputs[0])
 
     fallout_subtract_node = group.nodes.new(type="ShaderNodeMath")
     fallout_subtract_node.operation = "SUBTRACT"
     fallout_subtract_node.inputs[1].default_value = 0.060
 
-    group.links.new(input_node.outputs["Threshold"], fallout_subtract_node.inputs[0])
+    group.links.new(input_node.outputs["Threshold"],
+                    fallout_subtract_node.inputs[0])
 
     ao_node = create_tri_parametric_color_ramp_node(group)
     ao_node.inputs["Color1"].default_value = (1.0, 1.0, 1.0, 1.0)
@@ -425,7 +501,8 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     ao_node.inputs["Color3"].default_value = (1.0, 1.0, 1.0, 1.0)
 
     group.links.new(peeling_noise_node.outputs["Fac"], ao_node.inputs["Fac"])
-    group.links.new(fallout_subtract_node.outputs["Value"], ao_node.inputs["Pos1"])
+    group.links.new(
+        fallout_subtract_node.outputs["Value"], ao_node.inputs["Pos1"])
     group.links.new(input_node.outputs["Threshold"], ao_node.inputs["Pos2"])
     group.links.new(epsilon_add_node.outputs["Value"], ao_node.inputs["Pos3"])
 
@@ -436,7 +513,8 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     group.links.new(color_mix_node.outputs["Color"], ao_mix_node.inputs[1])
     group.links.new(ao_node.outputs["Color"], ao_mix_node.inputs[2])
 
-    create_frame_node(group, nodes=(epsilon_add_node, fallout_subtract_node, ao_node), name="AO", label="AO")
+    create_frame_node(group, nodes=(epsilon_add_node,
+                                    fallout_subtract_node, ao_node), name="AO", label="AO")
 
     # Metallic
 
@@ -444,15 +522,19 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     metallic_node.inputs["Color1"].default_value = (1.0, 1.0, 1.0, 1.0)
     metallic_node.inputs["Color2"].default_value = (0.0, 0.0, 0.0, 1.0)
 
-    group.links.new(peeling_threshold_node.outputs["Color"], metallic_node.inputs["Fac"])
+    group.links.new(
+        peeling_threshold_node.outputs["Color"], metallic_node.inputs["Fac"])
 
     # Roughness
 
     roughness_node = group.nodes.new(type="ShaderNodeMixRGB")
 
-    group.links.new(input_node.outputs["Metal Roughness"], roughness_node.inputs["Color1"])
-    group.links.new(input_node.outputs["Paint Roughness"], roughness_node.inputs["Color2"])
-    group.links.new(peeling_threshold_node.outputs["Color"], roughness_node.inputs["Fac"])
+    group.links.new(
+        input_node.outputs["Metal Roughness"], roughness_node.inputs["Color1"])
+    group.links.new(
+        input_node.outputs["Paint Roughness"], roughness_node.inputs["Color2"])
+    group.links.new(
+        peeling_threshold_node.outputs["Color"], roughness_node.inputs["Fac"])
 
     # Bump
 
@@ -471,20 +553,29 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     height_tail_add_node.inputs[1].default_value = 0.100
     height_tail_add_node.label = "Height Tail Add"
 
-    group.links.new(input_node.outputs["Threshold"], height_peak_add_node.inputs[2])
-    group.links.new(input_node.outputs["Peel Intense"], height_peak_add_node.inputs[0])
-    group.links.new(height_peak_add_node.outputs["Value"], height_tail_add_node.inputs[2])
-    group.links.new(input_node.outputs["Peel Intense"], height_tail_add_node.inputs[0])
-    group.links.new(peeling_noise_node.outputs["Fac"], height_node.inputs["Fac"])
-    group.links.new(input_node.outputs["Threshold"], height_node.inputs["Pos1"])
-    group.links.new(height_peak_add_node.outputs["Value"], height_node.inputs["Pos2"])
-    group.links.new(height_tail_add_node.outputs["Value"], height_node.inputs["Pos3"])
+    group.links.new(
+        input_node.outputs["Threshold"], height_peak_add_node.inputs[2])
+    group.links.new(
+        input_node.outputs["Peel Intense"], height_peak_add_node.inputs[0])
+    group.links.new(
+        height_peak_add_node.outputs["Value"], height_tail_add_node.inputs[2])
+    group.links.new(
+        input_node.outputs["Peel Intense"], height_tail_add_node.inputs[0])
+    group.links.new(
+        peeling_noise_node.outputs["Fac"], height_node.inputs["Fac"])
+    group.links.new(
+        input_node.outputs["Threshold"], height_node.inputs["Pos1"])
+    group.links.new(
+        height_peak_add_node.outputs["Value"], height_node.inputs["Pos2"])
+    group.links.new(
+        height_tail_add_node.outputs["Value"], height_node.inputs["Pos3"])
 
     bump_node = group.nodes.new(type="ShaderNodeBump")
     group.links.new(height_node.outputs["Color"], bump_node.inputs["Height"])
 
     create_frame_node(group,
-                      nodes=(height_node, height_peak_add_node, height_tail_add_node, bump_node),
+                      nodes=(height_node, height_peak_add_node,
+                             height_tail_add_node, bump_node),
                       name="Bump",
                       label="Bump")
 
@@ -497,8 +588,10 @@ def add_peeling_paint_metal_node_group() -> bpy.types.NodeGroup:
     group.outputs.new("NodeSocketVectorDirection", "Bump")
 
     group.links.new(ao_mix_node.outputs["Color"], output_node.inputs["Color"])
-    group.links.new(metallic_node.outputs["Color"], output_node.inputs["Metallic"])
-    group.links.new(roughness_node.outputs["Color"], output_node.inputs["Roughness"])
+    group.links.new(
+        metallic_node.outputs["Color"], output_node.inputs["Metallic"])
+    group.links.new(
+        roughness_node.outputs["Color"], output_node.inputs["Roughness"])
     group.links.new(bump_node.outputs["Normal"], output_node.inputs["Bump"])
 
     arrange_nodes(group)
@@ -526,11 +619,16 @@ def build_peeling_paint_metal_nodes(node_tree: bpy.types.NodeTree) -> None:
     principled_node = node_tree.nodes.new(type='ShaderNodeBsdfPrincipled')
     peeling_paint_metal_node = create_peeling_paint_metal_node_group(node_tree)
 
-    node_tree.links.new(peeling_paint_metal_node.outputs['Color'], principled_node.inputs['Base Color'])
-    node_tree.links.new(peeling_paint_metal_node.outputs['Metallic'], principled_node.inputs['Metallic'])
-    node_tree.links.new(peeling_paint_metal_node.outputs['Roughness'], principled_node.inputs['Roughness'])
-    node_tree.links.new(peeling_paint_metal_node.outputs['Bump'], principled_node.inputs['Normal'])
-    node_tree.links.new(principled_node.outputs['BSDF'], output_node.inputs['Surface'])
+    node_tree.links.new(
+        peeling_paint_metal_node.outputs['Color'], principled_node.inputs['Base Color'])
+    node_tree.links.new(
+        peeling_paint_metal_node.outputs['Metallic'], principled_node.inputs['Metallic'])
+    node_tree.links.new(
+        peeling_paint_metal_node.outputs['Roughness'], principled_node.inputs['Roughness'])
+    node_tree.links.new(
+        peeling_paint_metal_node.outputs['Bump'], principled_node.inputs['Normal'])
+    node_tree.links.new(
+        principled_node.outputs['BSDF'], output_node.inputs['Surface'])
 
     arrange_nodes(node_tree)
 
@@ -547,7 +645,8 @@ def build_emission_nodes(node_tree: bpy.types.NodeTree,
     emission_node.inputs["Color"].default_value = color + (1.0, )
     emission_node.inputs["Strength"].default_value = strength
 
-    node_tree.links.new(emission_node.outputs['Emission'], output_node.inputs['Surface'])
+    node_tree.links.new(
+        emission_node.outputs['Emission'], output_node.inputs['Surface'])
 
     arrange_nodes(node_tree)
 
@@ -567,5 +666,34 @@ def add_material(name: str = "Material",
 
     if use_nodes and make_node_tree_empty:
         clean_nodes(material.node_tree.nodes)
+
+    return material
+
+
+def add_material_simple(
+    name: str = "MaterialSimple",
+    diffuse_color: Tuple[float, float, float, float] = (0.8, 0.8, 0.8, 0.8),
+    metallic: float = 0.0,
+    refraction_depth: float = 0.0,
+    roughness: float = 0.4,
+    shadow_method: str = 'OPAQUE',
+    specular_color: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+    use_nodes: bool = False,
+) -> bpy.types.Material:
+    """
+    One stop shopping for a simple(ish) material
+    """
+
+    material = bpy.data.materials.new(name)
+    material.diffuse_color = diffuse_color
+    material.metallic = metallic
+    material.refraction_depth = refraction_depth
+    material.roughness = roughness
+    material.shadow_method = shadow_method
+    material.specular_color = specular_color
+
+    material.use_nodes = use_nodes
+    if use_nodes:
+        utils.clean_nodes(material.node_tree.nodes)
 
     return material

@@ -171,3 +171,6 @@ dmypy.json
 
 ### Blender
 *.blend[0-9]*
+
+### Temporary things while I work on things
+Hard_Surface_Mesh_*

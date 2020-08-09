@@ -63,9 +63,10 @@ if bpy.context is None:
 # python, and the 'utils' module tries to import bpy stuff (which
 # might not exist outside of the blender context)
 from mathutils import Vector
-from typing import Tuple
+from typing import List, Tuple
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import colorize
 import utils
 
 
@@ -90,42 +91,6 @@ import utils
 # Actual code follows
 #
 
-# FIXME: What's a good list of colors to use?
-# colorlist = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4',
-#              '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff',
-#              '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1',
-#              '#000075', '#808080', '#ffffff', '#000000']
-
-colorlist = ["#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059",
-             "#FFDBE5", "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43",
-             "#8FB0FF", "#997D87", "#5A0007", "#809693", "#FEFFE6", "#1B4400",
-             "#4FC601", "#3B5DFF", "#4A3B53", "#FF2F80", "#61615A", "#BA0900",
-             "#6B7900", "#00C2A0", "#FFAA92", "#FF90C9", "#B903AA", "#D16100",
-             "#DDEFFF", "#000035", "#7B4F4B", "#A1C299", "#300018", "#0AA6D8",
-             "#013349", "#00846F", "#372101", "#FFB500", "#C2FFED", "#A079BF",
-             "#CC0744", "#C0B9B2", "#C2FF99", "#001E09", "#00489C", "#6F0062",
-             "#0CBD66", "#EEC3FF", "#456D75", "#B77B68", "#7A87A1", "#788D66",
-             "#885578", "#FAD09F", "#FF8A9A", "#D157A0", "#BEC459", "#456648",
-             "#0086ED", "#886F4C", ]
-
-# FIXME: Right now alpha is always 1.0 ... should that be different?
-
-
-def colorHexToFloat(h: str) -> Tuple:
-    h = h.lstrip('#')
-    r, g, b = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return tuple((r / 255.0, g / 255.0, b / 255.0, 1.0))
-
-
-def colorNext() -> Tuple:
-    colorNext.colors = vars(colorNext).setdefault('colors', colorlist.copy())
-    v = colorNext.colors.pop(0)
-    if len(colorNext.colors) == 0:
-        colorNext.colors = colorlist.copy()
-
-    return colorHexToFloat(v)
-
-
 # FIXME: wtf is a good name for this? Both 'get' and 'create' are
 # not quite right...
 def materialGetIndex(obj: bpy.types.Object, matname: str) -> int:
@@ -144,7 +109,7 @@ def materialGetIndex(obj: bpy.types.Object, matname: str) -> int:
     principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
     utils.set_principled_node(
         principled_node=principled_node,
-        base_color=colorNext(),
+        base_color=colorize.colorNext(),
         metallic=0.5,
         specular=0.5,
         roughness=0.1,
@@ -160,44 +125,9 @@ def materialGetIndex(obj: bpy.types.Object, matname: str) -> int:
     return index
 
 
-def add_material_simple(
-    name: str = "MaterialSimple",
-    diffuse_color: Tuple[float, float, float, float] = (0.8, 0.8, 0.8, 0.8),
-    metallic: float = 0.0,
-    refraction_depth: float = 0.0,
-    roughness: float = 0.4,
-    shadow_method: str = 'OPAQUE',
-    specular_color: Tuple[float, float, float] = (1.0, 1.0, 1.0),
-    use_nodes: bool = False,
-
-    # FIXME: Unknown type?
-    # cycles_material_settings: bpy.types.CyclesMaterialSettings = None,
-) -> bpy.types.Material:
-    """
-    https://docs.blender.org/api/current/bpy.types.BlendDataMaterials.html
-    https://docs.blender.org/api/current/bpy.types.Material.html
-    """
-
-    material = bpy.data.materials.new(name)
-    material.diffuse_color = diffuse_color
-    material.metallic = metallic
-    material.refraction_depth = refraction_depth
-    material.roughness = roughness
-    material.shadow_method = shadow_method
-    material.specular_color = specular_color
-    # material.cycles_material_settings = cycles_material_settings
-
-    material.use_nodes = use_nodes
-    if use_nodes:
-        utils.clean_nodes(material.node_tree.nodes)
-
-    return material
-
-# Merge some objects into one object. Do this by creating a 'fake'
-# context object which will then be passed to join()
-
-
-def deleteObj(obj):
+# Delete an object using a context override
+# FIXME: Can this just be `bpy.data.objects.remove()`?
+def deleteObj(obj: bpy.types.Object) -> None:
     c = {}
     c["object"] = c["active_object"] = obj
 
@@ -207,7 +137,8 @@ def deleteObj(obj):
     x = bpy.ops.object.delete(c, use_global=True, confirm=False)
 
 
-def mergeObjs(active, selected):
+# Merge some objects into one object using a fake context object
+def mergeObjs(active: bpy.types.Object, selected: List[bpy.types.Object]) -> None:
     c = {}
     c["object"] = c["active_object"] = active
 
@@ -435,7 +366,7 @@ def main(argstr):
         principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
         utils.set_principled_node(
             principled_node=principled_node,
-            base_color=colorNext(),
+            base_color=colorize.colorNext(),
             metallic=0.5,
             # specular=0.5,
             roughness=0.1,
