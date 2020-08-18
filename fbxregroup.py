@@ -408,26 +408,50 @@ def process(scene_objects):
     return merged
 
 
+# FIXME: should really use something from os.path here instead of a regex
+file_re = re.compile("(.*).(fbx|blend)", re.IGNORECASE)
+
+# Load a file, be it blend or fbx (or others, at some point)
+
+
+def loadfile(filename):
+    m = file_re.match(filename)
+    if not m:
+        print("Filename pattern not matched, did you specify a valid file type?")
+        sys.exit(1)
+
+    basename = m.group(1)
+    filetype = str(m.group(2)).lower()
+    print(filetype)
+
+    print("importing %s ..." % (filename))
+
+    if filetype == "fbx":
+        # FIXME: Does this actually have a return code?
+        bpy.ops.import_scene.fbx(filepath=filename)
+
+    elif filetype == "blend":
+        # FIXME: Again, does this actually have a return code?
+        bpy.ops.wm.open_mainfile(
+            filepath=filename, load_ui=False, use_scripts=False)
+    else:
+        print("I accepted filetype %s but don't know how to process it?!" % (filetype))
+        sys.exit(1)
+
+    return [basename, filetype]
+
+
 # Split a file into multiple pieces, based on bounding box overlaps.
 # Much of the code here (anything for loading (and possibly saving) for
 # example) should really be refactored out.
 def cmd_split(args):
     print("cmd_split")
 
-    # FIXME: Support more than fbx
-    file_re = re.compile("(.*).fbx", re.IGNORECASE)
-    m = file_re.match(args.modelfile)
-    if not m:
-        print("Filename pattern not matched, did you specify an fbx file?")
-        sys.exit(1)
-    basename = m.groups(1)
-
     # Does the 'utils' library we borrowe give us an easier 'clean' function?
     for obj in bpy.context.scene.objects:
         deleteObj(obj)
 
-    print("importing %s.fbx ..." % (basename))
-    bpy.ops.import_scene.fbx(filepath=args.modelfile)
+    basename, filetype = loadfile(args.modelfile)
 
     print("preparing...")
     scene_objects = load()
@@ -480,12 +504,6 @@ def cmd_split(args):
 # FIXME: Probably needs a better name
 def cmd_finalize(args):
     print("cmd_finalize")
-    file_re = re.compile("(.*).fbx", re.IGNORECASE)
-    m = file_re.match(args.modelfile)
-    if not m:
-        print("Filename pattern not matched, did you specify an input file?")
-        sys.exit(1)
-    basename = m.groups(1)
 
     # print("importing %s.fbx ..." % (basename))
     # bpy.ops.import_scene.fbx(filepath=input_name)
@@ -499,8 +517,7 @@ def cmd_finalize(args):
         deleteObj(obj)
 
     # load us up some bits
-    print("importing %s.fbx ..." % (basename))
-    bpy.ops.import_scene.fbx(filepath=args.modelfile)
+    basename, filetype = loadfile(args.modelfile)
 
     to_merge = []
 
