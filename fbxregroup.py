@@ -4,7 +4,6 @@
 
 import argparse
 import math
-from pprint import pprint
 import re
 import sys
 import os
@@ -447,11 +446,16 @@ def loadfile(filename):
 def cmd_split(args):
     print("cmd_split")
 
+    if len(args.files) == 0:
+        print("command 'split' requires a filename argument")
+        sys.exit(1)
+
     # Does the 'utils' library we borrowe give us an easier 'clean' function?
     for obj in bpy.context.scene.objects:
         deleteObj(obj)
 
-    basename, filetype = loadfile(args.modelfile)
+    # FIXME: Handle multiple files
+    basename, filetype = loadfile(args.files[0])
 
     print("preparing...")
     scene_objects = load()
@@ -505,6 +509,10 @@ def cmd_split(args):
 def cmd_finalize(args):
     print("cmd_finalize")
 
+    if len(args.files) == 0:
+        print("command 'finalize' requires filenames to process")
+        sys.exit(1)
+
     # print("importing %s.fbx ..." % (basename))
     # bpy.ops.import_scene.fbx(filepath=input_name)
 
@@ -517,7 +525,8 @@ def cmd_finalize(args):
         deleteObj(obj)
 
     # load us up some bits
-    basename, filetype = loadfile(args.modelfile)
+    # FIXME: Process more than one file
+    basename, filetype = loadfile(args.files[0])
 
     to_merge = []
 
@@ -674,15 +683,14 @@ def cmd_finalize(args):
     # At 85mm, a 0.7944-blender-unit diagonal, you get a 290px wide
     # object (with a 512px wide image). Lets use that as kind of a
     # target.
-    #
-    # FIXME: Round out these normals
     diag = getDiagonalLength(obj.name)
     target_diag = 0.7944
     diffpct = diag / target_diag
-    camera_distance = 5.0
+    # camera_distance = 5.0
 
+    # Have a min and max lens length so we don't end up -too- far
+    # out in the weeds
     # FIXME: What is a good min/max for this?
-    # camera.data.lens = 85.0 / diffpct
     camera.data.lens = max(85.0 / diffpct, 20.0)
     camera.data.lens = min(camera.data.lens, 500.0)
     print("diagonal length is %f" % (getDiagonalLength(obj.name)))
@@ -706,12 +714,6 @@ def cmd_finalize(args):
 
     # print("done (%d --> %d)" % (start_objects, end_objects))
     # bpy.ops.wm.quit_blender()
-
-
-commands = {
-    "split": cmd_split,
-    "finalize": cmd_finalize,
-}
 
 
 def main(argv):
@@ -739,25 +741,52 @@ def main(argv):
         description='Toss some kitbash bits around (and more?)',
     )
 
-    parser.add_argument(
-        "command",
-        help="specifies what fbxregroup command to execute",
-        type=str,
-        nargs="?",
-        choices=commands.keys(),
-        const="split",
-        default="split",
+    subparsers = parser.add_subparsers(help="sub-command help")
+    subparser_split = subparsers.add_parser(
+        "split", help="split into subfiles")
+    subparser_split.set_defaults(func=cmd_split)
+
+    subparser_split.add_argument(
+        "files",
+        help="specify files to process",
+        metavar="files",
+        type=str,  # FIXME: Is there a 'file' type arg?
+        nargs="+",
     )
 
-    parser.add_argument(
-        "--modelfile", "-m", action="store", type=str, help="what model file to operate on"
+    subparser_finalize = subparsers.add_parser(
+        "finalize",
+        help="finalize split objects",
     )
+
+    subparser_finalize.set_defaults(func=cmd_finalize)
+
+    subparser_finalize.add_argument(
+        "files",
+        help="specify files to process",
+        metavar="files",
+        type=str,  # FIXME: Is there a 'file' type arg?
+        nargs="+",
+    )
+
+    # parser.add_argument(
+    #     "command",
+    #     help="specifies what fbxregroup command to execute",
+    #     type=str,
+    #     nargs="?",
+    #     choices=commands.keys(),
+    #     const="split",
+    #     default="split",
+    # )
+
+    # parser.add_argument(
+    #     "--modelfile", "-m", action="store", type=str, help="what model file to operate on"
+    # )
 
     args = parser.parse_args(argv)
     print(args)
 
-    f = commands[args.command]
-    f(args)
+    args.func(args)
 
     sys.exit(0)
 
