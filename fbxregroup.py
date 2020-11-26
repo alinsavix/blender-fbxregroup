@@ -26,12 +26,8 @@ def execBlender(reason: str):
     print("Not running under blender (%s)" % (reason))
     print("Re-execing myself under blender (blender must exist in path)...")
 
-    # Or could use e.g:
-    # import subprocess
-    # subprocess.Popen([bpy.app.binary_path, '-b', path, '--python', os.path.join(addon.path(), 'addon', 'utility', 'save.py')])
-
     blender_args = [
-        bpy.app.binary_path,
+        blender_bin,   # argv[0] -- called program name
         "--background",
         "--factory-startup",
         "--python",
