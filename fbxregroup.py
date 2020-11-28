@@ -8,15 +8,17 @@ import re
 import sys
 import os
 
+_debug = 0
+# temp things that won't work if directly executed, just so we get the types
+# from mathutils import Vector, kdtree
+# from typing import List, Tuple
+# end temp things
+
 print("argv: %s" % (sys.argv[1:]))
 # Sadly, can't define this later on, so it ends up having to sit right
 # in the middle of our imports!
 #
 # ? Should we redirect stdout/stderr before execing blender?
-#
-# ? Why does VSCode always want to add two blank lines before function?
-
-
 def execBlender(reason: str):
     blender_bin = "blender"
 
@@ -26,8 +28,12 @@ def execBlender(reason: str):
     print("Not running under blender (%s)" % (reason))
     print("Re-execing myself under blender (blender must exist in path)...")
 
+    # Or could use e.g:
+    # import subprocess
+    # subprocess.Popen([bpy.app.binary_path, '-b', path, '--python', os.path.join(addon.path(), 'addon', 'utility', 'save.py')])
+
     blender_args = [
-        blender_bin,   # argv[0] -- called program name
+        blender_bin,
         "--background",
         "--factory-startup",
         "--python",
@@ -61,11 +67,13 @@ if bpy.context is None:
 # because some other things might not be installed on system
 # python, and the 'utils' module tries to import bpy stuff (which
 # might not exist outside of the blender context)
-from mathutils import Vector
+from mathutils import Vector, kdtree
 from typing import List, Tuple
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import colorize
+from utils.colorize import ColorSequence
+from utils.materials import add_material, set_principled_node
+from utils import render
 import utils
 
 
@@ -98,11 +106,12 @@ import utils
 #
 # Actual code follows
 #
-
 def debug(s):
-    if False:
+    if _debug > 0:
         print("DEBUG: " + s)
 
+
+colorseq = ColorSequence()
 
 # FIXME: wtf is a good name for this? Both 'get' and 'create' are
 # not quite right...
@@ -112,17 +121,16 @@ def materialGetIndex(obj: bpy.types.Object, matname: str) -> int:
         # print("found mat: %s (index %d)" % (matname, index))
         return index
 
-    mat = utils.add_material(matname, use_nodes=True,
-                             make_node_tree_empty=True)
+    mat = add_material(matname, use_nodes=True, make_node_tree_empty=True)
 
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     output_node = nodes.new(type='ShaderNodeOutputMaterial')
 
     principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
-    utils.set_principled_node(
+    set_principled_node(
         principled_node=principled_node,
-        base_color=colorize.colorNext(),
+        base_color=colorseq.next(),
         metallic=0.5,
         specular=0.5,
         roughness=0.1,
@@ -266,50 +274,193 @@ def check_Collision(box1, box2):
     return isColliding
 
 
+### START OF CODE WE STOLE FROM ASHER ###
+def find_shortest_distance(obj_a, obj_b):
+    """
+    Given two mesh objects and an iteration limit,
+    this function finds and refines a shortest-distance line
+    between the objects' evaluated geometry.
+    """
+
+    if not ((obj_a.type == 'MESH') and (obj_b.type == 'MESH')):
+        print("ERROR: find_shortest_distance called w/o two mesh objects")
+        return False, obj_a.location, obj_b.location
+
+    # Location of obj_b in obj_a's local space
+    b_loc = obj_a.matrix_world.inverted() @ obj_b.location
+
+    # Get closest point on obj_a, in obj_a's local space
+    success_a, point_a, normal_a, index_a = obj_a.closest_point_on_mesh(b_loc)
+    # Convert point_a to world space
+    point_a = obj_a.matrix_world @ point_a
+    point_a_out = point_a
+    # convert point_a to obj_b's local space
+    point_a = obj_b.matrix_world.inverted() @ point_a
+
+    # Get closest point on obj_b, in obj_b's local space
+    success_b, point_b, normal_b, index_b = obj_b.closest_point_on_mesh(
+        point_a)
+    # Convert point_b to world space
+    point_b = obj_b.matrix_world @ point_b
+    point_b_out = point_b
+    # convert point_b to obj_a's local space
+    point_b = obj_a.matrix_world.inverted() @ point_b
+
+    success = (success_a and success_b)
+
+    return success, point_a_out, point_b_out
+
+
+def calc_distance(vec_a, vec_b):
+    """
+    Returns the Euclidian distance between two points in 3D Space.\n
+
+    How is there not a built-in function for this?
+    """
+    return (vec_b - vec_a).magnitude
+
+
+def refine_tree(targetobj, tree, allobjs, search_radius, distance, refine=True):
+    """
+    Takes in a KD Tree of objects and performs a two-step distance filter. \n
+
+    First it gets the objects with origins within (float) radius distance of (object) obj,
+    then it (optionally) refines that list to those with geometry that is within (float) dist distance of obj's geometry.
+    """
+
+    if targetobj.type != 'MESH':
+        print("refine_tree: WARNING object is {targetobj.type}, not MESH")
+        return []
+
+    # Lazy bounding box center, so objects with offset origins don't produce weird results
+    vec_sum = Vector((0.0, 0.0, 0.0))
+    for vec in targetobj.bound_box:
+        vec_sum += Vector(vec)
+
+    bbox_center = targetobj.location + (vec_sum / 8.0)
+
+    # The tree only contains vectors and indicies.
+    # This gives us a list of objects within the search radius.
+    objs = []
+    for (co, index, rad) in tree.find_range(bbox_center, search_radius):
+        ob = allobjs[index]
+        if (ob.type == 'MESH') and not (ob == targetobj):
+            objs.append(ob)
+
+    if not refine:
+        print("SKIP")
+        return objs
+
+    filtered_objs = []
+
+    for ob in objs:
+        if ob == targetobj:
+            continue
+
+        # For some reason (we should maybe figure out why, sometime) the
+        # results of find_shortest_distance depends on ordering. Run it
+        # both ways and pick the shortest distance, with the assumption
+        # that one or the other is at least close to correct
+        flag, point_a1, point_b1 = find_shortest_distance(targetobj, ob)
+        flag, point_a2, point_b2 = find_shortest_distance(ob, targetobj)
+
+        if not flag:
+            print("refine_tree: ERROR from find_shortest_distance")
+            continue
+
+        raw_dist = min(calc_distance(point_a1, point_b1),
+                       calc_distance(point_a2, point_b2))
+        converted_dist = bpy.utils.units.to_string(
+            'METRIC', 'LENGTH', raw_dist)
+
+        disposition = "discard"
+        if raw_dist <= distance:
+            disposition = "keep"
+            filtered_objs.append(ob)
+
+        debug(
+            f"  {ob.name} is {converted_dist} from {targetobj.name} ({disposition})")
+
+        if raw_dist <= distance:
+            filtered_objs.append(ob)
+
+    return filtered_objs
+
+### END OF CODE WE STOLE FROM ASHER ###
+
+
+def kdFindNearby(obj, tree, allobjs, distance, search_radius=1):
+    raw_bounds = obj.bound_box
+
+    bounds = []
+    for point in raw_bounds:
+        bounds.append(Vector(point).magnitude)
+
+    # FIXME: can we get rid of the magic numbers? What *are* these numbers?
+    radius = max(bounds) + search_radius
+
+    objs = refine_tree(obj, tree, allobjs, radius, distance)
+    return objs
+
+
+def kdCreate(objs):
+    tree = kdtree.KDTree(len(objs))
+
+    for i, obj in enumerate(objs):
+        tree.insert(obj.location, i)
+
+    tree.balance()
+    return tree
+
+
 # find collissions -- recursive
 #
-# w = object to investigate (name)
+# w = object to investigate
+# kdtree = kdtree of all objects in scene
 # objs = dictionary of objects to check for intersection
 # seen = objects we've already processed
 # depth = current depth (for debugging purposes)
-def fc_recurse(w, objs, seen, depth=0):
+#
+# This should only beb called for objects that aren't in "seen"
+def fc_recurse(w, tree, allobjs, distance, processed, seen, depth=0):
+    # We've definitely seen ourself
+    seen.update({w.name: True})
+
+    if w.type != 'MESH':
+        debug(f"fc_recurse not checking {w.name}, type {w.type} != 'MESH'")
+        return
+
     if depth == 0:
         debug("-----")
-    debug("recursively checking: %s (depth=%d, seen=%d)" %
-          (w, depth, len(seen)))
 
-    # We've definitely seen ourself
-    seen.update({w: True})
+    debug(f"recursively checking: {w.name} (depth={depth}, seen={len(seen)})")
 
     # 'seen' changed, so get the latest all-encompassing box
-    seen_bbox = getObjectBoundsMulti(seen)
+    # seen_bbox = getObjectBoundsMulti(seen)
+
+    nearby = kdFindNearby(w, tree, allobjs, distance)
+    debug(f"  Found {len(nearby)} nearby matches")
 
     skip = 0
-    count = 0
     match = 0
-    for k in list(objs.keys()):
-        # Have we already processed the object we want to test?
-        #
-        if seen.get(k) is not None:
-            debug("  Already saw %s, skipping" % (k))
+
+    for ob in nearby:
+        if seen.get(ob.name) is not None:
+            debug(f"  Already saw {ob.name}, skipping")
             skip += 1
             continue
 
-        debug("  Haven't seen %s, continuing intersect test" % (k))
-        k_bbox = getObjectBoundsMulti([k])
+        if processed.get(ob.name) is not None:
+            debug(f"  Already processed {ob.name}, skipping")
+            skip += 1
+            continue
 
-        # Check to see if the new object we're checking intersects
-        count += 1
-        if check_Collision(seen_bbox, k_bbox):
-            # print("intersection: %s + %s" % (w, k))
-            match += 1
-            debug("  Matched object %s" % (k))
-            fc_recurse(k, objs, seen, depth + 1)
-        # else:
-            # print("no intersection: %s + %s" % (w, k))
+        match += 1
+        debug(f"  Matched {ob.name}, recursing")
+        fc_recurse(ob, tree, allobjs, distance, processed, seen, depth)
 
-    debug("recurse for '%s' result:  depth=%d   c=%d, s=%d, m=%d" %
-          (w, depth, count, skip, match))
+    debug(
+        f"recurse for '{w.name}' result:  depth={depth}   s={skip}, m={match}")
 
     if depth == 0:
         debug("-----")
@@ -337,7 +488,8 @@ def merge_obj(active, selected):
 
 # load up our initial starting dict
 def load():
-    scene_objects = {}
+    # scene_objects = {}
+    scene_objects = []
 
     # Start with nothing selected
     bpy.ops.object.select_all(action='DESELECT')
@@ -347,13 +499,20 @@ def load():
     # intended to be run once, it's prooooobably ok. Maybe.
     for obj in bpy.context.scene.objects:
         # print(obj.name, obj, obj.type)
-        if obj.type != 'MESH':
+        # [ 'MESH', 'VOLUME', 'ARMATURE', 'EMPTY', 'LIGHT' ]:
+        if obj.type not in ['MESH']:
+            debug(
+                f"load discarded '{obj.name}' (improper object type {obj.type}")
             continue
 
         # Apply some transforms (mostly scale)
+        # ? Can we do this without having to set/unset the object?
         obj.select_set(True)
         bpy.ops.object.transform_apply(
             location=False, rotation=True, scale=True)
+        # Set the origin, just since some of them are really wacky when we
+        # import them.
+        bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
         obj.select_set(False)
 
         # Cache bounding box sizes
@@ -361,50 +520,48 @@ def load():
         # bb = get_BoundBox(obj.name)
 
         # A group of objects always includes itself
-        scene_objects[obj.name] = [obj.name]
+        # scene_objects[obj.name] = obj
+        scene_objects.append(obj)
 
     return scene_objects
 
 
 # File is loaded, process everything. scene_objects is edited in-place
-def process(scene_objects):
-    start_objects = len(scene_objects)
+def process(allobjects):
+    start_count = len(allobjects)
     merged = 0
-    print("processing %d objects..." % (start_objects))
+    mergeobjs = {}
+    print(f"processing {start_count} objects...")
 
-    # Start with the full list of objects in the file. As each are tested,
-    # they'll be removed, so our future searches have fewer things to
-    # check.
-    full = list(scene_objects.keys())
-    for k in full:
-        # Have we already processed an object (i.e. it's missing now)?
-        if scene_objects.get(k, None) is None:
+    tree = kdCreate(allobjects)
+
+    processed = {}
+    for obj in allobjects:
+        # Have we already processed an object?
+        if obj.name in processed:
+            debug(f"already processed: {obj.name}")
             continue
 
-        print("working: %s..." % (k), end='')
+        print(f"working: {obj.name}...", end='')
 
         # Check object k vs. every remaining thing in bboxes, and return in
         # 'seen' a dict of intersecting objects (including itself)
         seen = {}
-        fc_recurse(k, scene_objects, seen)
+        fc_recurse(obj, tree, allobjects, 0.040, processed, seen)
 
+        mergeobjs[obj.name] = seen
         if len(seen) == 1:
-            # Intersect with ourself, and just ourself
             print(" standalone object")
         else:
-            # Intersect with other things ... merge 'em!
+            # need to merge these, so mark 'em as such
             print(" merging %d objects (%s)" %
                   (len(seen), " ".join(list(seen.keys()))))
             merged += 1
 
-            for s in seen:
-                if s not in k:
-                    scene_objects[k].append(s)
+        for k in seen.keys():
+            processed.update({k: True})
 
-                    # Anything part of a join is no longer elgible for merging
-                    scene_objects.pop(s, None)
-
-    return merged
+    return mergeobjs
 
 
 # FIXME: should really use something from os.path here instead of a regex
@@ -457,33 +614,66 @@ def cmd_split(args):
     # FIXME: Handle multiple files
     basename, filetype = loadfile(args.files[0])
 
+    # ? Do we want to just create the kdtree once, and filter out things
+    # ? we've already seen, or do we want to recreate it each time to remove
+    # ? what we've already seen?
     print("preparing...")
     scene_objects = load()
     start_objects = len(scene_objects)
+
     print("processing...")
     cycles = 0
 
     # Something in my "process" logic is sometimes still leaving things not
     # grouped (I think because the size of the overall bounding box is larger
     # than the individual pieces), so run until everything converges.
-    while True:
-        print("Starting cycle %d..." % (cycles))
-        cycles += 1
-        count = process(scene_objects)
-        print("cycle %d merged %d objects" % (cycles, count))
-        if count == 0:
-            break
+    #
+    # * We used to have to loop here to catch everything, but I thiiiink that's
+    # fixed now, with the new proximity code?
+    # while True:
+    #     print("Starting cycle %d..." % (cycles))
+    #     cycles += 1
+    #     to_merge = process(scene_objects)
+    #     print("cycle %d merged down to %d objects" % (cycles, len(to_merge)))
+    #
+    #     if count == 0:
+    #         break
+
+    to_merge = process(scene_objects)
+    to_merge_sorted = {}
+
+    # Try to have a deterministic way to name things -- in this case, just
+    # take the object in a group that sorts first alphabetically, and use
+    # that as the main object name.
+    from pprint import pprint
+    # print()
+    # print("To merge:")
+    # pprint(list(to_merge.keys()))
+    print("pre merge")
+    i = 0
+    for k in to_merge:
+        i += 1
+        ordered = sorted(list(to_merge[k].keys()))
+
+        to_merge_sorted.update({ordered[0]: ordered})
+        # print(i)
+        # print(sorted(ordered))
+        # to_merge_sorted
+        # ordered = v.keys()
+        # to_merge_sorted.update({ordered[0]: ordered})
+        # print(ordered)
 
     # Actually merge things
-    for k, v in scene_objects.items():
+    for k, v in to_merge_sorted.items():
         # don't actually merge ... write as fbx instead
         # if len(v) > 1:
         #     merge_obj(k, v)
 
         bpy.ops.object.select_all(action='DESELECT')
-        for obj in v:
-            bpy.context.scene.objects[obj].select_set(True)
+        for o in v:
+            bpy.context.scene.objects[o].select_set(True)
 
+        # ? Should we use obj instead?
         bpy.ops.export_scene.fbx(
             filepath='%s.fbx' % (k),
             check_existing=False,
@@ -497,7 +687,7 @@ def cmd_split(args):
 
     # bpy.ops.wm.save_as_mainfile(filepath="%s_new.blend" %
     #                             (basename), check_existing=False)
-    end_objects = len(scene_objects)
+    end_objects = len(to_merge_sorted)
     print("done (%d --> %d)" % (start_objects, end_objects))
 
     # FIXME: should probably handle exiting better
@@ -637,15 +827,15 @@ def cmd_finalize(args):
     #                           diffuse_color=(0.8, 0.0, 0.0, 1.0))
 
     if False:
-        mat = utils.add_material("Material", use_nodes=True,
-                                 make_node_tree_empty=True)
+        mat = add_material("Material", use_nodes=True,
+                           make_node_tree_empty=True)
 
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
         output_node = nodes.new(type='ShaderNodeOutputMaterial')
 
         principled_node = nodes.new(type='ShaderNodeBsdfPrincipled')
-        utils.set_principled_node(
+        set_principled_node(
             principled_node=principled_node,
             base_color=colorize.colorNext(),
             metallic=0.5,
@@ -672,13 +862,15 @@ def cmd_finalize(args):
     # utils.add_track_to_constraint(camera_object, obj)
     camera = bpy.data.objects["Camera"]
 
-    output_file = "%s.png" % (basename)
-    utils.set_output_properties(scene=scene, resolution_percentage=100,
-                                output_file_path=output_file)
+    # The blender output path seems to need to bbe absolute
+    # FIXME: This will probably break if the user uses an absolute path
+    output_file = os.path.join(os.path.realpath("."), f"{basename}.png")
+    render.set_output_properties(scene=scene, resolution_percentage=100,
+                                 output_file_path=output_file)
 
     num_samples = 16
-    utils.set_cycles_renderer(scene, camera,
-                              num_samples, use_denoising=False)
+    render.set_cycles_renderer(scene, camera,
+                               num_samples, use_denoising=False)
 
     # At 85mm, a 0.7944-blender-unit diagonal, you get a 290px wide
     # object (with a 512px wide image). Lets use that as kind of a
@@ -741,6 +933,8 @@ def main(argv):
         description='Toss some kitbash bits around (and more?)',
     )
 
+    parser.add_argument("--debug", "-d", action="count", default=0)
+
     subparsers = parser.add_subparsers(help="sub-command help")
     subparser_split = subparsers.add_parser(
         "split", help="split into subfiles")
@@ -784,7 +978,9 @@ def main(argv):
     # )
 
     args = parser.parse_args(argv)
-    print(args)
+
+    global _debug
+    _debug = args.debug
 
     args.func(args)
 
