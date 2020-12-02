@@ -74,6 +74,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils.colorize import ColorSequence
 from utils.materials import add_material, set_principled_node
 from utils import render
+from utils.utils import clean_objects
 import utils
 
 
@@ -486,8 +487,8 @@ def merge_obj(active, selected):
     debug("join called, result: %s" % (x))
 
 
-# load up our initial starting dict
-def load():
+# go through and make sure our scene is ready for processing
+def sceneprep():
     # scene_objects = {}
     scene_objects = []
 
@@ -499,14 +500,13 @@ def load():
     # intended to be run once, it's prooooobably ok. Maybe.
     for obj in bpy.context.scene.objects:
         # print(obj.name, obj, obj.type)
-        # [ 'MESH', 'VOLUME', 'ARMATURE', 'EMPTY', 'LIGHT' ]:
-        if obj.type not in ['MESH']:
+        if obj.type not in ['MESH', 'VOLUME', 'ARMATURE', 'EMPTY', 'LIGHT']:
+            # if obj.type not in ['MESH']:
             debug(
                 f"load discarded '{obj.name}' (improper object type {obj.type}")
             continue
 
         # Apply some transforms (mostly scale)
-        # ? Can we do this without having to set/unset the object?
         obj.select_set(True)
         bpy.ops.object.transform_apply(
             location=False, rotation=True, scale=True)
@@ -515,53 +515,47 @@ def load():
         bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
         obj.select_set(False)
 
-        # Cache bounding box sizes
-        # Can/should we just pass the entire object here?
-        # bb = get_BoundBox(obj.name)
-
-        # A group of objects always includes itself
-        # scene_objects[obj.name] = obj
         scene_objects.append(obj)
 
     return scene_objects
 
 
 # File is loaded, process everything. scene_objects is edited in-place
-def process(allobjects):
-    start_count = len(allobjects)
-    merged = 0
-    mergeobjs = {}
-    print(f"processing {start_count} objects...")
+def findclusters(objects):
+    start_count = len(objects)
+    clustered = 0
+    clusterobjs = {}
+    print(f"finding clusters for {start_count} objects...")
 
-    tree = kdCreate(allobjects)
+    tree = kdCreate(objects)
 
     processed = {}
-    for obj in allobjects:
+    for obj in objects:
         # Have we already processed an object?
         if obj.name in processed:
             debug(f"already processed: {obj.name}")
             continue
 
-        print(f"working: {obj.name}...", end='')
+        debug(f"proximity testing: {obj.name}...")
 
-        # Check object k vs. every remaining thing in bboxes, and return in
-        # 'seen' a dict of intersecting objects (including itself)
+        # 'seen' (for lack of a better term) is objects we've already touched
+        # for this particular top-level object
         seen = {}
-        fc_recurse(obj, tree, allobjects, 0.040, processed, seen)
+        fc_recurse(obj, tree, objects, 0.040, processed, seen)
 
-        mergeobjs[obj.name] = seen
+        clusterobjs[obj.name] = seen
         if len(seen) == 1:
-            print(" standalone object")
+            debug("...standalone object")
         else:
             # need to merge these, so mark 'em as such
-            print(" merging %d objects (%s)" %
+            debug("...merging %d objects (%s)" %
                   (len(seen), " ".join(list(seen.keys()))))
-            merged += 1
+            clustered += 1
 
         for k in seen.keys():
             processed.update({k: True})
 
-    return mergeobjs
+    return clusterobjs
 
 
 # FIXME: should really use something from os.path here instead of a regex
@@ -573,125 +567,117 @@ file_re = re.compile("(.*).(fbx|blend)", re.IGNORECASE)
 def loadfile(filename):
     m = file_re.match(filename)
     if not m:
-        print("Filename pattern not matched, did you specify a valid file type?")
-        sys.exit(1)
+        raise ValueError("Bad filename specified")
 
     basename = m.group(1)
     filetype = str(m.group(2)).lower()
-    print(filetype)
 
     print("importing %s ..." % (filename))
 
+    # FIXME: Figure out if these have return codes, or throw exceptions,
+    # or ... what.
     if filetype == "fbx":
-        # FIXME: Does this actually have a return code?
         bpy.ops.import_scene.fbx(filepath=filename)
 
     elif filetype == "blend":
-        # FIXME: Again, does this actually have a return code?
         bpy.ops.wm.open_mainfile(
             filepath=filename, load_ui=False, use_scripts=False)
     else:
-        print("I accepted filetype %s but don't know how to process it?!" % (filetype))
-        sys.exit(1)
+        # FIXME: What kind of exception is actually right here?
+        raise Exception(f"accepted {filetype} file, but can't process it?")
 
     return [basename, filetype]
+
+
+def cleanload(filename: str) -> (str, str):
+    clean_objects()
+    basename, filetype = loadfile(filename)
+    return(basename, filetype)
 
 
 # Split a file into multiple pieces, based on bounding box overlaps.
 # Much of the code here (anything for loading (and possibly saving) for
 # example) should really be refactored out.
 def cmd_split(args):
-    print("cmd_split")
+    # print("cmd_split")
 
-    if len(args.files) == 0:
-        print("command 'split' requires a filename argument")
-        sys.exit(1)
+    # if len(args.files) == 0:
+    #     print("command 'split' requires a filename argument")
+    #     sys.exit(1)
 
-    # Does the 'utils' library we borrowe give us an easier 'clean' function?
-    for obj in bpy.context.scene.objects:
-        deleteObj(obj)
+    # clean_objects()
 
-    # FIXME: Handle multiple files
-    basename, filetype = loadfile(args.files[0])
+    # # FIXME: Handle multiple files
+    # basename, filetype = loadfile(args.files[0])
+    basename, filetype = cleanload(args.files[0])
 
     # ? Do we want to just create the kdtree once, and filter out things
     # ? we've already seen, or do we want to recreate it each time to remove
     # ? what we've already seen?
     print("preparing...")
-    scene_objects = load()
+    scene_objects = sceneprep()
     start_objects = len(scene_objects)
 
     print("processing...")
-    cycles = 0
-
-    # Something in my "process" logic is sometimes still leaving things not
-    # grouped (I think because the size of the overall bounding box is larger
-    # than the individual pieces), so run until everything converges.
-    #
-    # * We used to have to loop here to catch everything, but I thiiiink that's
-    # fixed now, with the new proximity code?
-    # while True:
-    #     print("Starting cycle %d..." % (cycles))
-    #     cycles += 1
-    #     to_merge = process(scene_objects)
-    #     print("cycle %d merged down to %d objects" % (cycles, len(to_merge)))
-    #
-    #     if count == 0:
-    #         break
-
-    to_merge = process(scene_objects)
+    to_merge = findclusters(scene_objects)
     to_merge_sorted = {}
 
     # Try to have a deterministic way to name things -- in this case, just
     # take the object in a group that sorts first alphabetically, and use
     # that as the main object name.
-    from pprint import pprint
-    # print()
-    # print("To merge:")
-    # pprint(list(to_merge.keys()))
-    print("pre merge")
-    i = 0
     for k in to_merge:
-        i += 1
         ordered = sorted(list(to_merge[k].keys()))
-
         to_merge_sorted.update({ordered[0]: ordered})
-        # print(i)
-        # print(sorted(ordered))
-        # to_merge_sorted
-        # ordered = v.keys()
-        # to_merge_sorted.update({ordered[0]: ordered})
-        # print(ordered)
 
-    # Actually merge things
+    # bpy.ops.preferences.addon_enable(module="kitops")
+
+    # Actually group and write things
     for k, v in to_merge_sorted.items():
-        # don't actually merge ... write as fbx instead
-        # if len(v) > 1:
-        #     merge_obj(k, v)
-
         bpy.ops.object.select_all(action='DESELECT')
-        for o in v:
-            bpy.context.scene.objects[o].select_set(True)
 
-        # ? Should we use obj instead?
+        for o in v:
+            bpy.data.objects[o].select_set(True)
+
+        bpy.context.view_layer.objects.active = bpy.data.objects[v[0]]
+
+        # ? Should we use obj instead of fbx?
         bpy.ops.export_scene.fbx(
             filepath='%s.fbx' % (k),
             check_existing=False,
             use_selection=True,
             apply_scale_options='FBX_SCALE_NONE',
-            use_mesh_modifiers=True,   # Should this be false?
+            use_mesh_modifiers=True,   # ? Should this be optional?
+            use_subsurf=True,
             mesh_smooth_type='OFF',
+            use_custom_props=True,   # ? Should this befalse?
             add_leaf_bones=True,
-            path_mode='AUTO',  # or ABSOLUTE or RELATIVE
+            path_mode='COPY',  # or ABSOLUTE or RELATIVE
+            embed_textures=True,    # embed textures
+            # axis_forward=?,    # ? Should we set this?
+            # axis_up=?,  # ? Should we set this?
+            use_metadata=True,   # FIXME: What does this actually add?
         )
+
+        # bpy.ops.ko.create_insert()
+        # sys.modules['kitops.addon.utility.smart'].save_insert(
+        #     path=f"{k}.blend", objects=bpy.context.selected_objects,
+        # )
+        # sys.modules['kitops.addon.utility.smart'].create_insert()
+        # sys.modules['kitops.addon.utility.smart'].save_insert(
+        #     path=f"{k}.blend", objects=bpy.context.selected_objects,
+        # )
+        # bpy.ops.ko.save_insert()
+        # bpy.ops.ko.create_insert('INVOKE_REGION_WIN')
+        # bpy.context.window_manager.kitops.insert_name = f"fbxrg_{k}"
+        # bpy.ops.ko.save_as_insert('INVOKE_REGION_WIN', check_existing=False)
+        # bpy.ops.ko.close_factory_scene()
 
     # bpy.ops.wm.save_as_mainfile(filepath="%s_new.blend" %
     #                             (basename), check_existing=False)
     end_objects = len(to_merge_sorted)
     print("done (%d --> %d)" % (start_objects, end_objects))
 
-    # FIXME: should probably handle exiting better
-    bpy.ops.wm.quit_blender()
+    return
 
 
 # FIXME: Probably needs refactoring
@@ -984,7 +970,8 @@ def main(argv):
 
     args.func(args)
 
-    sys.exit(0)
+    bpy.ops.wm.quit_blender()
+    sys.exit(0)  # Shouldn't be reached
 
     if args.command == "split":
         print("split mode")
