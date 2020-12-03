@@ -551,7 +551,7 @@ def findclusters(objects):
         # 'seen' (for lack of a better term) is objects we've already touched
         # for this particular top-level object
         seen = {}
-        fc_recurse(obj, tree, objects, 0.040, processed, seen)
+        fc_recurse(obj, tree, objects, 0.025, processed, seen)
 
         clusterobjs[obj.name] = seen
         if len(seen) == 1:
