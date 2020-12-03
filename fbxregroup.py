@@ -8,6 +8,8 @@ import re
 import sys
 import os
 
+from typing import Dict, List, Tuple
+
 _debug = 0
 # temp things that won't work if directly executed, just so we get the types
 # from mathutils import Vector, kdtree
@@ -68,7 +70,6 @@ if bpy.context is None:
 # python, and the 'utils' module tries to import bpy stuff (which
 # might not exist outside of the blender context)
 from mathutils import Vector, kdtree
-from typing import List, Tuple
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils.colorize import ColorSequence
@@ -193,12 +194,9 @@ def getObjectBounds(object_name):
     return bbox_minmax
 
 
-def getObjectBoundsMulti(objs=[]):
-    # try to catch pieces that are adjacent but not actually intersecting
-    slop = 0.001
-
+def getObjectBoundsMulti(objnames: List[str] = [], slop: float = 0.0):
     boxes = []
-    for o in objs:
+    for o in objnames:
         boxes.append(getObjectBounds(o))
 
     # print("::::".join([str(b[0]) for b in boxes.values()]))
@@ -231,6 +229,15 @@ def getObjectNewOrigin(object_name):
 
     return [x, y, z]
 
+
+# And the same, but for multiple objects
+def getObjectNewOriginMulti(objnames: List[str] = []) -> Tuple[float, float, float]:
+    bb = getObjectBoundsMulti(objnames, slop=0.0)
+    x = (bb[0] + bb[1]) / 2.0
+    y = (bb[2] + bb[3]) / 2.0
+    z = bb[4]
+
+    return (x, y, z)
 
 # Figure out how big the object bounding box is along the diagonal,
 # to help with fitting it on-camera. We only care about X and Y (really
@@ -527,6 +534,9 @@ def findclusters(objects):
     clusterobjs = {}
     print(f"finding clusters for {start_count} objects...")
 
+    # ? Do we want to just create the kdtree once, and filter out things
+    # ? we've already seen, or do we want to recreate it each time to remove
+    # ? what we've already seen?
     tree = kdCreate(objects)
 
     processed = {}
@@ -555,7 +565,15 @@ def findclusters(objects):
         for k in seen.keys():
             processed.update({k: True})
 
-    return clusterobjs
+    # Try to have a deterministic way to name things -- in this case, just
+    # take the object in a group that sorts first alphabetically, and use
+    # that as the main object name.
+    clusterobjs_sorted = {}
+    for k in clusterobjs:
+        ordered = sorted(list(clusterobjs[k].keys()))
+        clusterobjs_sorted.update({ordered[0]: ordered})
+
+    return clusterobjs_sorted
 
 
 # FIXME: should really use something from os.path here instead of a regex
@@ -595,6 +613,35 @@ def cleanload(filename: str) -> (str, str):
     return(basename, filetype)
 
 
+def writefbx_batch(clusters: Dict[str, List[str]], filepattern: str = "%s.fbx") -> None:
+    for k, v in clusters.items():
+        bpy.ops.object.select_all(action='DESELECT')
+
+        for o in v:
+            bpy.data.objects[o].select_set(True)
+
+        bpy.context.view_layer.objects.active = bpy.data.objects[v[0]]
+
+        # ? Should we use obj instead of fbx?
+        bpy.ops.export_scene.fbx(
+            filepath=filepattern % (k),
+            check_existing=False,
+            use_selection=True,
+            apply_scale_options='FBX_SCALE_NONE',
+            use_mesh_modifiers=True,   # ? Should this be optional?
+            use_subsurf=True,
+            mesh_smooth_type='OFF',
+            use_custom_props=True,   # ? Should this befalse?
+            add_leaf_bones=True,
+            path_mode='COPY',  # or ABSOLUTE or RELATIVE
+            embed_textures=True,    # embed textures
+            # axis_forward=?,    # ? Should we set this?
+            # axis_up=?,  # ? Should we set this?
+            use_metadata=True,   # FIXME: What does this actually add?
+        )
+        bpy.ops.object.select_all(action='DESELECT')
+
+
 # Split a file into multiple pieces, based on bounding box overlaps.
 # Much of the code here (anything for loading (and possibly saving) for
 # example) should really be refactored out.
@@ -611,70 +658,120 @@ def cmd_split(args):
     # basename, filetype = loadfile(args.files[0])
     basename, filetype = cleanload(args.files[0])
 
-    # ? Do we want to just create the kdtree once, and filter out things
-    # ? we've already seen, or do we want to recreate it each time to remove
-    # ? what we've already seen?
     print("preparing...")
     scene_objects = sceneprep()
     start_objects = len(scene_objects)
 
     print("processing...")
-    to_merge = findclusters(scene_objects)
-    to_merge_sorted = {}
-
-    # Try to have a deterministic way to name things -- in this case, just
-    # take the object in a group that sorts first alphabetically, and use
-    # that as the main object name.
-    for k in to_merge:
-        ordered = sorted(list(to_merge[k].keys()))
-        to_merge_sorted.update({ordered[0]: ordered})
-
+    clusters = findclusters(scene_objects)
     # bpy.ops.preferences.addon_enable(module="kitops")
 
     # Actually group and write things
-    for k, v in to_merge_sorted.items():
-        bpy.ops.object.select_all(action='DESELECT')
+    writefbx_batch(clusters, "%s.fbx")
 
-        for o in v:
-            bpy.data.objects[o].select_set(True)
-
-        bpy.context.view_layer.objects.active = bpy.data.objects[v[0]]
-
-        # ? Should we use obj instead of fbx?
-        bpy.ops.export_scene.fbx(
-            filepath='%s.fbx' % (k),
-            check_existing=False,
-            use_selection=True,
-            apply_scale_options='FBX_SCALE_NONE',
-            use_mesh_modifiers=True,   # ? Should this be optional?
-            use_subsurf=True,
-            mesh_smooth_type='OFF',
-            use_custom_props=True,   # ? Should this befalse?
-            add_leaf_bones=True,
-            path_mode='COPY',  # or ABSOLUTE or RELATIVE
-            embed_textures=True,    # embed textures
-            # axis_forward=?,    # ? Should we set this?
-            # axis_up=?,  # ? Should we set this?
-            use_metadata=True,   # FIXME: What does this actually add?
-        )
-
-        # bpy.ops.ko.create_insert()
-        # sys.modules['kitops.addon.utility.smart'].save_insert(
-        #     path=f"{k}.blend", objects=bpy.context.selected_objects,
-        # )
-        # sys.modules['kitops.addon.utility.smart'].create_insert()
-        # sys.modules['kitops.addon.utility.smart'].save_insert(
-        #     path=f"{k}.blend", objects=bpy.context.selected_objects,
-        # )
-        # bpy.ops.ko.save_insert()
-        # bpy.ops.ko.create_insert('INVOKE_REGION_WIN')
-        # bpy.context.window_manager.kitops.insert_name = f"fbxrg_{k}"
-        # bpy.ops.ko.save_as_insert('INVOKE_REGION_WIN', check_existing=False)
-        # bpy.ops.ko.close_factory_scene()
+    # bpy.ops.ko.create_insert()
+    # sys.modules['kitops.addon.utility.smart'].save_insert(
+    #     path=f"{k}.blend", objects=bpy.context.selected_objects,
+    # )
+    # sys.modules['kitops.addon.utility.smart'].create_insert()
+    # sys.modules['kitops.addon.utility.smart'].save_insert(
+    #     path=f"{k}.blend", objects=bpy.context.selected_objects,
+    # )
+    # bpy.ops.ko.save_insert()
+    # bpy.ops.ko.create_insert('INVOKE_REGION_WIN')
+    # bpy.context.window_manager.kitops.insert_name = f"fbxrg_{k}"
+    # bpy.ops.ko.save_as_insert('INVOKE_REGION_WIN', check_existing=False)
+    # bpy.ops.ko.close_factory_scene()
 
     # bpy.ops.wm.save_as_mainfile(filepath="%s_new.blend" %
     #                             (basename), check_existing=False)
-    end_objects = len(to_merge_sorted)
+    end_objects = len(clusters)
+    print("done (%d --> %d)" % (start_objects, end_objects))
+
+    return
+
+
+# make a plane that sits under our object
+def createBasePlane(objname: str, location, xdim: float, ydim: float) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_plane_add(
+        size=1, location=location, calc_uvs=False, enter_editmode=False)
+    bpy.ops.transform.resize(value=[xdim, ydim, 1.0])
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+    # bpy.context.active_object.hide_viewport = True
+    bpy.context.active_object.hide_render = True
+    bpy.context.active_object.display_type = "WIRE"
+    bpy.context.active_object.display.show_shadows = False
+
+    bpy.context.active_object.name = objname
+
+    new_obj = bpy.context.active_object
+    bpy.ops.object.select_all(action='DESELECT')
+    return new_obj
+
+
+# Do something similar to cmd_split, except write out a blend file in
+# a format that kitops-batch can process correctly into inserts.Hopefully.
+def cmd_kitops(args):
+    # # FIXME: Handle multiple files
+    basename, filetype = cleanload(args.files[0])
+
+    print("preparing...")
+    scene_objects = sceneprep()
+    start_objects = len(scene_objects)
+
+    print("processing...")
+    clusters = findclusters(scene_objects)
+
+    for k, v in clusters.items():
+        if len(v) == 1:
+            continue
+
+        new_origin = getObjectNewOriginMulti(v)
+        dims = getObjectBoundsMulti(v)
+        xdim = (dims[1] - dims[0]) * 1.1
+        ydim = (dims[3] - dims[2]) * 1.1
+        base = createBasePlane(f"{k}_base", new_origin, xdim, ydim)
+
+        for n in v:
+            obj = bpy.data.objects[n]
+            obj.name = "obj_" + obj.name
+            obj.parent = base
+            obj.matrix_parent_inverse = base.matrix_world.inverted()
+
+        base.name = k
+
+    print("saving %s.blend ..." % (basename))
+    bpy.ops.wm.save_mainfile(filepath=f"kitops_{basename}.blend")
+
+    #     getObjectBoundsMulti(v, slop=0)
+    #     bpy.ops.object.select_all(action='DESELECT')
+
+    #     for o in v:
+    #         bpy.data.objects[o].select_set(True)
+
+    #     bpy.context.view_layer.objects.active = bpy.data.objects[v[0]]
+
+    # # Actually group and write things
+    # writefbx_batch(clusters, "%s.fbx")
+
+    # bpy.ops.ko.create_insert()
+    # sys.modules['kitops.addon.utility.smart'].save_insert(
+    #     path=f"{k}.blend", objects=bpy.context.selected_objects,
+    # )
+    # sys.modules['kitops.addon.utility.smart'].create_insert()
+    # sys.modules['kitops.addon.utility.smart'].save_insert(
+    #     path=f"{k}.blend", objects=bpy.context.selected_objects,
+    # )
+    # bpy.ops.ko.save_insert()
+    # bpy.ops.ko.create_insert('INVOKE_REGION_WIN')
+    # bpy.context.window_manager.kitops.insert_name = f"fbxrg_{k}"
+    # bpy.ops.ko.save_as_insert('INVOKE_REGION_WIN', check_existing=False)
+    # bpy.ops.ko.close_factory_scene()
+
+    # bpy.ops.wm.save_as_mainfile(filepath="%s_new.blend" %
+    #                             (basename), check_existing=False)
+    end_objects = len(clusters)
     print("done (%d --> %d)" % (start_objects, end_objects))
 
     return
@@ -927,6 +1024,21 @@ def main(argv):
     subparser_split.set_defaults(func=cmd_split)
 
     subparser_split.add_argument(
+        "files",
+        help="specify files to process",
+        metavar="files",
+        type=str,  # FIXME: Is there a 'file' type arg?
+        nargs="+",
+    )
+
+    subparser_kitops = subparsers.add_parser(
+        "kitops",
+        help="file prepared for kitops batch",
+    )
+
+    subparser_kitops.set_defaults(func=cmd_kitops)
+
+    subparser_kitops.add_argument(
         "files",
         help="specify files to process",
         metavar="files",
