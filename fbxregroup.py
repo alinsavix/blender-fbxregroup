@@ -693,27 +693,29 @@ def cmd_split(args):
 
 # make a plane that sits under our object
 def createBasePlane(objname: str, location, xdim: float, ydim: float) -> bpy.types.Object:
+    bpy.ops.object.select_all(action='DESELECT')
     bpy.ops.mesh.primitive_plane_add(
         size=1, location=location, calc_uvs=False, enter_editmode=False)
     bpy.ops.transform.resize(value=[xdim, ydim, 1.0])
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
-    # bpy.context.active_object.hide_viewport = True
-    bpy.context.active_object.hide_render = True
-    bpy.context.active_object.display_type = "WIRE"
-    bpy.context.active_object.display.show_shadows = False
-
-    bpy.context.active_object.name = objname
-
-    new_obj = bpy.context.active_object
+    obj = bpy.context.object
     bpy.ops.object.select_all(action='DESELECT')
-    return new_obj
+
+    obj.hide_render = True
+    obj.display_type = 'WIRE'
+    obj.display.show_shadows = False
+
+    obj.name = objname
+
+    return obj
 
 
 # Do something similar to cmd_split, except write out a blend file in
 # a format that kitops-batch can process correctly into inserts.Hopefully.
 def cmd_kitops(args):
-    # # FIXME: Handle multiple files
+
+    # FIXME: Handle multiple files
     basename, filetype = cleanload(args.files[0])
 
     print("preparing...")
@@ -742,6 +744,8 @@ def cmd_kitops(args):
         base.name = k
 
     print("saving %s.blend ..." % (basename))
+    # bpy.context.view_layer.update()
+
     bpy.ops.wm.save_mainfile(filepath=f"kitops_{basename}.blend")
 
     #     getObjectBoundsMulti(v, slop=0)
