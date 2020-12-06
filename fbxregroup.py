@@ -221,6 +221,8 @@ def isOverlapping1D(box1min, box1max, box2min, box2max):
 
 # Figure out where the origin of our object should be, which should
 # generally be the center of the bottom face of the bounding box.
+#
+# FIXME: Make this use actual objects instead of names
 def getObjectNewOrigin(object_name):
     bb = getObjectBounds(object_name)
     x = (bb[0] + bb[1]) / 2.0
@@ -513,14 +515,17 @@ def sceneprep():
                 f"load discarded '{obj.name}' (improper object type {obj.type}")
             continue
 
-        # Apply some transforms (mostly scale)
-        obj.select_set(True)
-        bpy.ops.object.transform_apply(
-            location=False, rotation=True, scale=True)
-        # Set the origin, just since some of them are really wacky when we
-        # import them.
-        bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
-        obj.select_set(False)
+        # Apply some transforms (mostly we care about scalescale). Some
+        # object types aren't supported ("no data to transform"), but I
+        # doun't know the entire list. Certainly light types.
+        if obj.type not in ['LIGHT']:
+            obj.select_set(True)
+            bpy.ops.object.transform_apply(
+                location=False, rotation=True, scale=True)
+            # Set the origin, just since some of them are really wacky when we
+            # import them.
+            bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
+            obj.select_set(False)
 
         scene_objects.append(obj)
 
@@ -712,9 +717,12 @@ def createBasePlane(objname: str, location, xdim: float, ydim: float) -> bpy.typ
 
 
 # Do something similar to cmd_split, except write out a blend file in
-# a format that kitops-batch can process correctly into inserts.Hopefully.
+# a format that kitops-batch can process correctly into inserts. (basically,
+# for things that are more than one obbject, make a wireframe plane as the
+# 'base' and parent the rest of the cluster to it)
+#
+# Though as of at least 2020-12-04, kitops batch fucks it up... sigh.
 def cmd_kitops(args):
-
     # FIXME: Handle multiple files
     basename, filetype = cleanload(args.files[0])
 
@@ -781,6 +789,96 @@ def cmd_kitops(args):
     return
 
 
+def setObjOrigin(obj: bpy.types.Object, origin: Vector):
+    c = bpy.context.copy()
+    c["active_object"] = obj
+
+    # AFAIK the 3D cursor isn't part of the context
+    old_origin = bpy.context.scene.cursor.location
+    bpy.context.scene.cursor.location = origin
+    bpy.ops.object.origin_set(c, type='ORIGIN_CURSOR')
+    bpy.context.scene.cursor.location = old_origin
+
+
+# Given an object, merge its children, after setting up vertex groups for
+# each, so we don't lose their original identity.
+#
+# FIXME: Should standalone objects have vertex groups created?
+def mergeChildren(obj: bpy.types.Object):
+    name = obj.name
+    if obj.display_type == 'WIRE':
+        all = list(obj.children)
+        deleteObj(obj)
+    else:
+        all = [obj] + list(obj.children)
+
+    for o in all:
+        vg = o.vertex_groups.new(name=o.name)
+        verts = [v.index for v in o.data.vertices]
+        vg.add(verts, 0.0, "REPLACE")
+
+    combined_obj = all[0]
+    mergeObjs(combined_obj, all)
+    combined_obj.name = name
+    new_origin = getObjectNewOrigin(name)
+    setObjOrigin(combined_obj, Vector(new_origin))
+
+    return combined_obj
+
+
+# Probably need a better name, or something
+#
+# Take a blend file (probably created from cmd_kitops) and merge the mergabble
+# items, adding vertex groups for the original components, since kitops can't
+# deal with multiple objects sanely.
+#
+# Every object without a parent gets merged. Objects without a parent have
+# their children merged, if any. Objects that are wireframes are removed and
+# have their children merged.
+def cmd_kitbash_merge(args):
+    # FIXME: Handle multiple files
+    basename, filetype = cleanload(args.files[0])
+
+    print("preparing...")
+    scene_objects = sceneprep()
+    start_objects = len(scene_objects)
+
+    merge_parents = []
+    for obj in scene_objects:
+
+        if obj.type != 'MESH':
+            debug(f"skipping non-mesh {obj.name}")
+            continue
+
+        if obj.parent is not None:
+            debug(f"object {obj.name} has parent {obj.parent.name}, skipping")
+            continue
+
+        if len(obj.children) > 0:
+            merge_parents.append(obj)
+
+        # ideally transforms are already applied, but may as well make sure
+        # bpy.ops.object.select_all(action='DESELECT')
+        # obj.select_set(True)
+        # bpy.ops.object.transform_apply(
+        #     location=False, rotation=True, scale=True)
+        # obj.select_set(False)
+
+    for obj in merge_parents:
+        mergeChildren(obj)
+
+    # Everything should be merged, just save
+    print(f"saving {basename}.blend ...")
+    bpy.ops.wm.save_mainfile(filepath=f"merged_{basename}.blend")
+
+    # FIXME: this is probably wrong
+    # FIXME: wrong thing to look atf
+    end_objects = len(bpy.context.scene.objects)
+    print(f"done ({start_objects} --> {end_objects})")
+
+    return
+
+
 # FIXME: Probably needs refactoring
 # FIXME: Probably needs a better name
 def cmd_finalize(args):
@@ -809,16 +907,16 @@ def cmd_finalize(args):
 
     bpy.ops.object.select_all(action='DESELECT')
     for obj in bpy.context.scene.objects:
-        if obj.type != 'MESH':
+        # FIXME: What other types should we ignore?
+        if obj.type in ['CAMERA']:
             continue
 
-        # Apply some transforms (mostly scale)
-        # FIXME: Do we need this?
         # FIXME: Make sure our scale isn't changing between stages
-        obj.select_set(True)
-        bpy.ops.object.transform_apply(
-            location=False, rotation=True, scale=True)
-        obj.select_set(False)
+        if obj.type not in ['LIGHT']:
+            obj.select_set(True)
+            bpy.ops.object.transform_apply(
+                location=False, rotation=True, scale=True)
+            obj.select_set(False)
 
         to_merge.append(obj)
 
@@ -1023,6 +1121,8 @@ def main(argv):
     parser.add_argument("--debug", "-d", action="count", default=0)
 
     subparsers = parser.add_subparsers(help="sub-command help")
+
+    ## SPLIT ##
     subparser_split = subparsers.add_parser(
         "split", help="split into subfiles")
     subparser_split.set_defaults(func=cmd_split)
@@ -1035,6 +1135,7 @@ def main(argv):
         nargs="+",
     )
 
+    ## KITOPS ##
     subparser_kitops = subparsers.add_parser(
         "kitops",
         help="file prepared for kitops batch",
@@ -1050,6 +1151,7 @@ def main(argv):
         nargs="+",
     )
 
+    ## FINALIZE ##
     subparser_finalize = subparsers.add_parser(
         "finalize",
         help="finalize split objects",
@@ -1058,6 +1160,22 @@ def main(argv):
     subparser_finalize.set_defaults(func=cmd_finalize)
 
     subparser_finalize.add_argument(
+        "files",
+        help="specify files to process",
+        metavar="files",
+        type=str,  # FIXME: Is there a 'file' type arg?
+        nargs="+",
+    )
+
+    ## KITBASH MERGE ##
+    subparser_kitbash_merge = subparsers.add_parser(
+        "kitops-merge",
+        help="merge kitbash clusters to importable objects",
+    )
+
+    subparser_kitbash_merge.set_defaults(func=cmd_kitbash_merge)
+
+    subparser_kitbash_merge.add_argument(
         "files",
         help="specify files to process",
         metavar="files",
