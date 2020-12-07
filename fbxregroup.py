@@ -4,9 +4,10 @@
 
 import argparse
 import math
-import re
-import sys
 import os
+import re
+import subprocess
+import sys
 
 from typing import Dict, List, Tuple
 
@@ -113,6 +114,34 @@ def debug(s):
         print("DEBUG: " + s)
 
 
+# Return the git revision as a string
+def git_version():
+    def _minimal_ext_cmd(cmd, cwd=None):
+        # construct minimal environment
+        env = {}
+        for k in ['SYSTEMROOT', 'PATH']:
+            v = os.environ.get(k)
+            if v is not None:
+                env[k] = v
+        # LANGUAGE is used on win32
+        env['LANGUAGE'] = 'C'
+        env['LANG'] = 'C'
+        env['LC_ALL'] = 'C'
+        out = subprocess.Popen(
+            cmd, cwd=cwd, stdout=subprocess.PIPE, env=env).communicate()[0]
+        return out
+
+    try:
+        out = _minimal_ext_cmd(
+            ['git', 'describe', '--always', '--dirty'], os.path.dirname(__file__))
+        GIT_REVISION = out.strip().decode('ascii')
+    except OSError:
+        GIT_REVISION = "unknown"
+
+    return GIT_REVISION
+
+
+# FIXME: Is there a better way than this global?
 colorseq = ColorSequence()
 
 # FIXME: wtf is a good name for this? Both 'get' and 'create' are
@@ -585,8 +614,6 @@ def findclusters(objects):
 file_re = re.compile("(.*).(fbx|blend)", re.IGNORECASE)
 
 # Load a file, be it blend or fbx (or others, at some point)
-
-
 def loadfile(filename):
     m = file_re.match(filename)
     if not m:
@@ -696,26 +723,6 @@ def cmd_split(args):
     return
 
 
-# make a plane that sits under our object
-def createBasePlane(objname: str, location, xdim: float, ydim: float) -> bpy.types.Object:
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.ops.mesh.primitive_plane_add(
-        size=1, location=location, calc_uvs=False, enter_editmode=False)
-    bpy.ops.transform.resize(value=[xdim, ydim, 1.0])
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-
-    obj = bpy.context.object
-    bpy.ops.object.select_all(action='DESELECT')
-
-    obj.hide_render = True
-    obj.display_type = 'WIRE'
-    obj.display.show_shadows = False
-
-    obj.name = objname
-
-    return obj
-
-
 # Do something similar to cmd_split, except write out a blend file in
 # a format that kitops-batch can process correctly into inserts. (basically,
 # for things that are more than one obbject, make a wireframe plane as the
@@ -789,43 +796,6 @@ def cmd_kitops(args):
     return
 
 
-def setObjOrigin(obj: bpy.types.Object, origin: Vector):
-    c = bpy.context.copy()
-    c["active_object"] = obj
-
-    # AFAIK the 3D cursor isn't part of the context
-    old_origin = bpy.context.scene.cursor.location
-    bpy.context.scene.cursor.location = origin
-    bpy.ops.object.origin_set(c, type='ORIGIN_CURSOR')
-    bpy.context.scene.cursor.location = old_origin
-
-
-# Given an object, merge its children, after setting up vertex groups for
-# each, so we don't lose their original identity.
-#
-# FIXME: Should standalone objects have vertex groups created?
-def mergeChildren(obj: bpy.types.Object):
-    name = obj.name
-    if obj.display_type == 'WIRE':
-        all = list(obj.children)
-        deleteObj(obj)
-    else:
-        all = [obj] + list(obj.children)
-
-    for o in all:
-        vg = o.vertex_groups.new(name=o.name)
-        verts = [v.index for v in o.data.vertices]
-        vg.add(verts, 0.0, "REPLACE")
-
-    combined_obj = all[0]
-    mergeObjs(combined_obj, all)
-    combined_obj.name = name
-    new_origin = getObjectNewOrigin(name)
-    setObjOrigin(combined_obj, Vector(new_origin))
-
-    return combined_obj
-
-
 # Probably need a better name, or something
 #
 # Take a blend file (probably created from cmd_kitops) and merge the mergabble
@@ -845,7 +815,6 @@ def cmd_kitbash_merge(args):
 
     merge_parents = []
     for obj in scene_objects:
-
         if obj.type != 'MESH':
             debug(f"skipping non-mesh {obj.name}")
             continue
@@ -1095,6 +1064,7 @@ def cmd_finalize(args):
 
 def main(argv):
     input_name = ""
+    print("fbxregroup version: %s" % (git_version()))
 
     print(argv)
 
