@@ -66,6 +66,7 @@ except ImportError as e:
 if bpy.context is None:
     execBlender("no context available")
 
+from bpy.props import StringProperty
 # We have to do the above before trying to import other things,
 # because some other things might not be installed on system
 # python, and the 'utils' module tries to import bpy stuff (which
@@ -269,6 +270,18 @@ def getObjectNewOriginMulti(objnames: List[str] = []) -> Tuple[float, float, flo
     z = bb[4]
 
     return (x, y, z)
+
+
+def setObjOrigin(obj: bpy.types.Object, origin: Vector):
+    c = bpy.context.copy()
+    c["active_object"] = obj
+
+    # AFAIK the 3D cursor isn't part of the context
+    old_origin = bpy.context.scene.cursor.location
+    bpy.context.scene.cursor.location = origin
+    bpy.ops.object.origin_set(c, type='ORIGIN_CURSOR')
+    bpy.context.scene.cursor.location = old_origin
+
 
 # Figure out how big the object bounding box is along the diagonal,
 # to help with fitting it on-camera. We only care about X and Y (really
@@ -525,6 +538,60 @@ def merge_obj(active, selected):
     debug("join called, result: %s" % (x))
 
 
+# Given an object, merge its children, after setting up vertex groups for
+# each, so we don't lose their original identity.
+#
+# FIXME: Should standalone objects have vertex groups created?
+def mergeChildren(obj: bpy.types.Object):
+    name = obj.name
+    if obj.display_type == 'WIRE':
+        all = list(obj.children)
+        deleteObj(obj)
+    else:
+        all = [obj] + list(obj.children)
+
+    for o in all:
+        vg = o.vertex_groups.new(name=o.name)
+        verts = [v.index for v in o.data.vertices]
+        vg.add(verts, 0.0, "REPLACE")
+
+    source_objects = ",".join([x.name for x in all])
+
+    combined_obj = all[0]
+    mergeObjs(combined_obj, all)
+    combined_obj.name = name
+    new_origin = getObjectNewOrigin(name)
+    setObjOrigin(combined_obj, Vector(new_origin))
+
+    # it would be better if this was an actual list rather than just a CSV,
+    # but blender makes that really hard, so we just get a CSV. This is mostly
+    # intended for humans, so that's probably ok.
+    combined_obj.fbxregroup.origin_merged = source_objects
+    # print(f"{combined_obj.fbxregroup.origin_file}")
+
+    return combined_obj
+
+
+# make a plane that sits under our object
+def createBasePlane(objname: str, location, xdim: float, ydim: float) -> bpy.types.Object:
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.ops.mesh.primitive_plane_add(
+        size=1, location=location, calc_uvs=False, enter_editmode=False)
+    bpy.ops.transform.resize(value=[xdim, ydim, 1.0])
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+    obj = bpy.context.object
+    bpy.ops.object.select_all(action='DESELECT')
+
+    obj.hide_render = True
+    obj.display_type = 'WIRE'
+    obj.display.show_shadows = False
+
+    obj.name = objname
+
+    return obj
+
+
 # go through and make sure our scene is ready for processing
 def sceneprep():
     # scene_objects = {}
@@ -674,6 +741,29 @@ def writefbx_batch(clusters: Dict[str, List[str]], filepattern: str = "%s.fbx") 
         bpy.ops.object.select_all(action='DESELECT')
 
 
+class FbxRegroupSourceInfo(bpy.types.PropertyGroup):
+    origin_file: StringProperty(
+        name="Kitbash Object Origin Filename",
+        description="The name of the file that originally contained this object",
+        subtype='FILE_NAME',   # FIXME: Do we really need this set?
+    )
+
+    origin_merged: StringProperty(
+        name="Kitbash Merged Object Origin Object Names",
+        description="Comma-separated names of the objects originally merged to make this object",
+    )
+
+    origin_object: StringProperty(
+        name="Kitbash Object Origin Original Name",
+        description="Name of original parent object that created this object",
+    )
+
+    cmd_version: StringProperty(
+        name="fbxregroup Version",
+        description="The fbxregroup version that created this object",
+    )
+
+
 # Split a file into multiple pieces, based on bounding box overlaps.
 # Much of the code here (anything for loading (and possibly saving) for
 # example) should really be refactored out.
@@ -733,11 +823,22 @@ def cmd_kitops(args):
     # FIXME: Handle multiple files
     basename, filetype = cleanload(args.files[0])
 
+    # FIXME: Should we pass this in, instead of makingn this call twice?
+    # (The other time is during startup)
+    fbxregroup_version = git_version()
+
     print("preparing...")
     scene_objects = sceneprep()
     start_objects = len(scene_objects)
 
     print("processing...")
+    for obj in scene_objects:
+        if obj.fbxregroup.origin_object is None:
+            obj.fbxregroup.origin_object = obj.name
+        if obj.fbxregroup.origin_file is None:
+            obj.fbxregroup.origin_file = os.path.basename(args.files[0])
+        obj.fbxregroup.cmd_version = fbxregroup_version
+
     clusters = findclusters(scene_objects)
 
     for k, v in clusters.items():
@@ -805,9 +906,13 @@ def cmd_kitops(args):
 # Every object without a parent gets merged. Objects without a parent have
 # their children merged, if any. Objects that are wireframes are removed and
 # have their children merged.
-def cmd_kitbash_merge(args):
+def cmd_kitops_merge(args):
     # FIXME: Handle multiple files
     basename, filetype = cleanload(args.files[0])
+
+    # FIXME: Should we pass this in, instead of makingn this call twice?
+    # (The other time is during startup)
+    fbxregroup_version = git_version()
 
     print("preparing...")
     scene_objects = sceneprep()
@@ -826,6 +931,11 @@ def cmd_kitbash_merge(args):
         if len(obj.children) > 0:
             merge_parents.append(obj)
 
+        if obj.fbxregroup.origin_object is None:
+            obj.fbxregroup.origin_object = obj.name
+        if obj.fbxregroup.origin_file is None:
+            obj.fbxregroup.origin_file = os.path.basename(args.files[0])
+        obj.fbxregroup.cmd_version = fbxregroup_version
         # ideally transforms are already applied, but may as well make sure
         # bpy.ops.object.select_all(action='DESELECT')
         # obj.select_set(True)
@@ -1077,6 +1187,11 @@ def main(argv):
         print("Usage: blender --background --python thisfile.py -- -m <file>.fbx")
         return 1
 
+    # Set our custom props so everything has them
+    bpy.utils.register_class(FbxRegroupSourceInfo)
+    bpy.types.Object.fbxregroup = bpy.props.PointerProperty(
+        type=FbxRegroupSourceInfo)
+
     # chop argv down to just our arguments
     args_start = argv.index("--") + 1
     argv = argv[args_start:]
@@ -1138,14 +1253,14 @@ def main(argv):
     )
 
     ## KITBASH MERGE ##
-    subparser_kitbash_merge = subparsers.add_parser(
+    subparser_kitops_merge = subparsers.add_parser(
         "kitops-merge",
         help="merge kitbash clusters to importable objects",
     )
 
-    subparser_kitbash_merge.set_defaults(func=cmd_kitbash_merge)
+    subparser_kitops_merge.set_defaults(func=cmd_kitops_merge)
 
-    subparser_kitbash_merge.add_argument(
+    subparser_kitops_merge.add_argument(
         "files",
         help="specify files to process",
         metavar="files",
