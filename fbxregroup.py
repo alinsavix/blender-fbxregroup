@@ -597,6 +597,10 @@ def sceneprep():
     # scene_objects = {}
     scene_objects = []
 
+    # Make sure we're in a known/consistent mode (i.e. object mode)
+    if bpy.context.active_object is not None:
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+
     # Start with nothing selected
     bpy.ops.object.select_all(action='DESELECT')
 
@@ -833,9 +837,10 @@ def cmd_kitops(args):
 
     print("processing...")
     for obj in scene_objects:
-        if obj.fbxregroup.origin_object is None:
+        # print(f"origin object: {obj.fbxregroup.origin_object}")
+        if obj.fbxregroup.origin_object == "":
             obj.fbxregroup.origin_object = obj.name
-        if obj.fbxregroup.origin_file is None:
+        if obj.fbxregroup.origin_file == "":
             obj.fbxregroup.origin_file = os.path.basename(args.files[0])
         obj.fbxregroup.cmd_version = fbxregroup_version
 
@@ -931,9 +936,9 @@ def cmd_kitops_merge(args):
         if len(obj.children) > 0:
             merge_parents.append(obj)
 
-        if obj.fbxregroup.origin_object is None:
+        if obj.fbxregroup.origin_object == "":
             obj.fbxregroup.origin_object = obj.name
-        if obj.fbxregroup.origin_file is None:
+        if obj.fbxregroup.origin_file == "":
             obj.fbxregroup.origin_file = os.path.basename(args.files[0])
         obj.fbxregroup.cmd_version = fbxregroup_version
         # ideally transforms are already applied, but may as well make sure
