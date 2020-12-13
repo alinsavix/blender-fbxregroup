@@ -1189,7 +1189,7 @@ def main(argv):
     # If there's not a double dash in argv, it means we can't possibly
     # have any arguments, in which case, we should blow up.
     if (("--" in argv) == False):
-        print("Usage: blender --background --python thisfile.py -- -m <file>.fbx")
+        print("Usage: blender --background --python thisfile.py -- <file>.fbx")
         return 1
 
     # Set our custom props so everything has them
