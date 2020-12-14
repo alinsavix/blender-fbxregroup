@@ -868,7 +868,8 @@ def cmd_kitops(args):
     print("saving %s.blend ..." % (basename))
     # bpy.context.view_layer.update()
 
-    bpy.ops.wm.save_mainfile(filepath=f"kitops_{basename}.blend")
+    bpy.ops.wm.save_mainfile(
+        filepath=f"kitops_{basename}.blend", compress=True)
 
     #     getObjectBoundsMulti(v, slop=0)
     #     bpy.ops.object.select_all(action='DESELECT')
@@ -953,8 +954,9 @@ def cmd_kitops_merge(args):
         mergeChildren(obj)
 
     # Everything should be merged, just save
-    print(f"saving {basename}.blend ...")
-    bpy.ops.wm.save_mainfile(filepath=f"merged_{basename}.blend")
+    print(f"saving merged_{basename}.blend ...")
+    bpy.ops.wm.save_mainfile(
+        filepath=f"merged_{basename}.blend", compress=True)
 
     # FIXME: this is probably wrong
     # FIXME: wrong thing to look atf
@@ -994,7 +996,7 @@ def cmd_kitops_batch(args):
     print(f"fbxregroup: saving to temporary working file {workfile}")
     versions = bpy.context.preferences.filepaths.save_version
     bpy.context.preferences.filepaths.save_version = 0
-    bpy.ops.wm.save_mainfile(filepath=workfile)
+    bpy.ops.wm.save_mainfile(filepath=workfile, compress=True)
     bpy.context.preferences.filepaths.save_version = versions
 
     bpy.ops.preferences.addon_enable(module="kitops")
