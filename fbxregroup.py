@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 from typing import Dict, List, Tuple
 
@@ -963,6 +964,50 @@ def cmd_kitops_merge(args):
     return
 
 
+# FIXME: Needs better name?
+def cmd_kitops_batch(args):
+    # FIXME: Handle multiple files
+    # print(args.outdir)
+    basename, filetype = cleanload(args.files[0])
+
+    # FIXME: Should we pass this in, instead of makingn this call twice?
+    # (The other time is during startup)
+    fbxregroup_version = git_version()
+
+    # Don't actually need prep -- just use what's there
+    # print("preparing...")
+    # scene_objects = sceneprep()
+    # start_objects = len(scene_objects)
+
+    # make sure our textures are bundled, save into the output
+    # directory, and then do the export. Wish these things could
+    # be provided directly to kitops, but it doesn't like to play
+    # well with others.
+    #
+    # ? Do we want to be able to bypass this?
+    with tempfile.NamedTemporaryFile(dir=args.outdir, prefix="fbxregroup_",
+                                     suffix=".blend", delete=False) as f:
+        workfile = f.name
+
+    bpy.ops.file.pack_all()
+
+    print(f"fbxregroup: saving to temporary working file {workfile}")
+    versions = bpy.context.preferences.filepaths.save_version
+    bpy.context.preferences.filepaths.save_version = 0
+    bpy.ops.wm.save_mainfile(filepath=workfile)
+    bpy.context.preferences.filepaths.save_version = versions
+
+    bpy.ops.preferences.addon_enable(module="kitops")
+    bpy.ops.preferences.addon_enable(module="kitops-batch")
+    bpy.ops.kob.batch_export_blend()
+
+    print(f"fbxregroup: removing temporary file {workfile}")
+    # ?! This may happen before the batch export happens -- doublecheck
+    os.remove(workfile)
+
+    return
+
+
 # FIXME: Probably needs refactoring
 # FIXME: Probably needs a better name
 def cmd_finalize(args):
@@ -1177,6 +1222,13 @@ def cmd_finalize(args):
     # bpy.ops.wm.quit_blender()
 
 
+def writable_dir(d: str) -> str:
+    if not os.path.isdir(d) or not os.access(d, os.W_OK):
+        raise argparse.ArgumentError(f"'{d}' is not a writable directory")
+
+    return d
+
+
 def main(argv):
     input_name = ""
     print("fbxregroup version: %s" % (git_version()))
@@ -1257,7 +1309,7 @@ def main(argv):
         nargs="+",
     )
 
-    ## KITBASH MERGE ##
+    ## KITOPS MERGE ##
     subparser_kitops_merge = subparsers.add_parser(
         "kitops-merge",
         help="merge kitbash clusters to importable objects",
@@ -1271,6 +1323,31 @@ def main(argv):
         metavar="files",
         type=str,  # FIXME: Is there a 'file' type arg?
         nargs="+",
+    )
+
+    ## KITOPS BATCH ##
+    subparser_kitops_batch = subparsers.add_parser(
+        "kitops-batch",
+        help="batch export prepared file to inserts",
+    )
+
+    subparser_kitops_batch.set_defaults(func=cmd_kitops_batch)
+
+    subparser_kitops_batch.add_argument(
+        "files",
+        help="specify files to process",
+        metavar="files",
+        type=str,  # FIXME: Is there a 'file' type arg?
+        nargs="+",
+    )
+
+    subparser_kitops_batch.add_argument(
+        "--outdir", "-o",
+        help="output directory for kitops inserts",
+        metavar="outdir",
+        type=writable_dir,
+        default=".",
+        nargs='?',
     )
 
     # parser.add_argument(
