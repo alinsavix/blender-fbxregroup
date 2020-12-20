@@ -543,6 +543,7 @@ def merge_obj(active, selected):
 # each, so we don't lose their original identity.
 #
 # FIXME: Should standalone objects have vertex groups created?
+parent_re = re.compile(r"^__(.*)__$")
 def mergeChildren(obj: bpy.types.Object):
     name = obj.name
     if obj.display_type == 'WIRE':
@@ -550,6 +551,10 @@ def mergeChildren(obj: bpy.types.Object):
         deleteObj(obj)
     else:
         all = [obj] + list(obj.children)
+
+    m = parent_re.match(name)
+    if m:
+        name = m.group(1)
 
     for o in all:
         vg = o.vertex_groups.new(name=o.name)
@@ -609,7 +614,6 @@ def sceneprep():
     # This is probably going to be stupidly expensive, but since it's only
     # intended to be run once, it's prooooobably ok. Maybe.
     for obj in bpy.context.scene.objects:
-        # print(obj.name, obj, obj.type)
         if obj.type not in ['MESH', 'VOLUME', 'ARMATURE', 'EMPTY', 'LIGHT']:
             # if obj.type not in ['MESH']:
             debug(
@@ -623,6 +627,7 @@ def sceneprep():
             obj.select_set(True)
             bpy.ops.object.transform_apply(
                 location=False, rotation=True, scale=True)
+
             # Set the origin, just since some of them are really wacky when we
             # import them.
             bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
@@ -664,8 +669,8 @@ def findclusters(objects):
             debug("...standalone object")
         else:
             # need to merge these, so mark 'em as such
-            debug("...merging %d objects (%s)" %
-                  (len(seen), " ".join(list(seen.keys()))))
+            print("...merging %d objects as '%s': %s" %
+                  (len(seen), obj.name, " ".join(list(seen.keys()))))
             clustered += 1
 
         for k in seen.keys():
@@ -683,7 +688,7 @@ def findclusters(objects):
 
 
 # FIXME: should really use something from os.path here instead of a regex
-file_re = re.compile("(.*).(fbx|blend)", re.IGNORECASE)
+file_re = re.compile("(.*).(fbx|obj|blend)", re.IGNORECASE)
 
 # Load a file, be it blend or fbx (or others, at some point)
 def loadfile(filename):
@@ -699,7 +704,11 @@ def loadfile(filename):
     # FIXME: Figure out if these have return codes, or throw exceptions,
     # or ... what.
     if filetype == "fbx":
-        bpy.ops.import_scene.fbx(filepath=filename)
+        bpy.ops.import_scene.fbx(
+            filepath=filename, use_image_search=True, use_anim=False)
+
+    elif filetype == "obj":
+        bpy.ops.import_scene.obj(filepath=filename, use_split_groups=True)
 
     elif filetype == "blend":
         bpy.ops.wm.open_mainfile(
@@ -855,15 +864,14 @@ def cmd_kitops(args):
         dims = getObjectBoundsMulti(v)
         xdim = (dims[1] - dims[0]) * 1.1
         ydim = (dims[3] - dims[2]) * 1.1
-        base = createBasePlane(f"{k}_base", new_origin, xdim, ydim)
+        base = createBasePlane(f"__{k}__", new_origin, xdim, ydim)
 
         for n in v:
             obj = bpy.data.objects[n]
-            obj.name = "obj_" + obj.name
             obj.parent = base
             obj.matrix_parent_inverse = base.matrix_world.inverted()
 
-        base.name = k
+        # base.name = k
 
     print("saving %s.blend ..." % (basename))
     # bpy.context.view_layer.update()
@@ -987,7 +995,7 @@ def cmd_kitops_batch(args):
     # well with others.
     #
     # ? Do we want to be able to bypass this?
-    with tempfile.NamedTemporaryFile(dir=args.outdir, prefix="fbxregroup_",
+    with tempfile.NamedTemporaryFile(dir=args.outdir, prefix="fbxregroup_tmp_",
                                      suffix=".blend", delete=False) as f:
         workfile = f.name
 
