@@ -1021,6 +1021,47 @@ def cmd_kitops_batch(args):
     return
 
 
+# utterly broken :()
+def cmd_kitops_thumbnail(args):
+    spaths = bpy.utils.script_paths()
+    for p in spaths:
+        fn = os.path.join(p, "addons", "kitops-batch", "render.blend")
+        if os.path.exists(fn):
+            print(f"loading render scene from: {fn}")
+            loadfile(fn)
+            break
+    else:
+        print("ERROR: couldn't load render scene -- is kitops-batch installed?")
+        return
+
+    bpy.ops.preferences.addon_enable(module="kitops")
+    bpy.ops.preferences.addon_enable(module="kitops-batch")
+
+    # Maybe this will work?
+    # for window in bpy.context.window_manager.windows:
+    #     screen = window.screen
+
+    # for area in screen.areas:
+    #     if area.type == 'VIEW_3D':
+    #         override = {'window': window, 'screen': screen, 'area': area}
+    #         bpy.ops.ko.add_insert(override,
+    #                               'EXEC_SCREEN', location=args.files[0], material_link=True)
+    #         break
+    context = bpy.context.copy()
+    context["space_data"] = {"region_quadviews": False, "local_view": False}
+
+    # print(bpy.context.space_data)
+
+    # FIXME: Support multiple files
+    bpy.ops.ko.add_insert(context, 'INVOKE_DEFAULT',
+                          location=args.files[0], material_link=True)
+    # bpy.data.window_managers["WinMan"].kob.camera_padding = 0.15
+    # bpy.ops.view3d.camera_to_view_selected()
+    # bpy.ops.kob.test_thumb_render('EXEC_REGION_WIN')
+    # bpy.data.window_managers["WinMan"].kob.batch_render_enabled = True
+    # bpy.ops.kob.batch_render_thumbs('EXEC_REGION_WIN')
+
+
 # FIXME: Probably needs refactoring
 # FIXME: Probably needs a better name
 def cmd_finalize(args):
@@ -1361,6 +1402,22 @@ def main(argv):
         type=writable_dir,
         default=".",
         nargs='?',
+    )
+
+    ## KITOPS THUMBNAIL ##
+    subparser_kitops_thumbnail = subparsers.add_parser(
+        "kitops-thumbnail",
+        help="generate thumbnails for kitops insert directories",
+    )
+
+    subparser_kitops_thumbnail.set_defaults(func=cmd_kitops_thumbnail)
+
+    subparser_kitops_thumbnail.add_argument(
+        "files",
+        help="specify files to process",
+        metavar="files",
+        type=str,  # FIXME: Is there a 'file' type arg?
+        nargs="+",
     )
 
     # parser.add_argument(
