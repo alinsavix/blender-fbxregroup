@@ -546,7 +546,7 @@ def merge_obj(active, selected):
 parent_re = re.compile(r"^__(.*)__$")
 def mergeChildren(obj: bpy.types.Object):
     name = obj.name
-    if obj.display_type == 'WIRE':
+    if obj.type == 'EMPTY' or obj.display_type == 'WIRE':
         all = list(obj.children)
         deleteObj(obj)
     else:
@@ -708,11 +708,14 @@ def loadfile(filename):
             filepath=filename, use_image_search=True, use_anim=False)
 
     elif filetype == "obj":
-        bpy.ops.import_scene.obj(filepath=filename, use_split_groups=True)
+        # FIXME: make global_clight_size (at minimum) configurable
+        bpy.ops.import_scene.obj(filepath=filename, use_split_groups=True,
+                                 global_clight_size=40.0)
 
     elif filetype == "blend":
         bpy.ops.wm.open_mainfile(
             filepath=filename, load_ui=False, use_scripts=False)
+
     else:
         # FIXME: What kind of exception is actually right here?
         raise Exception(f"accepted {filetype} file, but can't process it?")
@@ -935,7 +938,7 @@ def cmd_kitops_merge(args):
 
     merge_parents = []
     for obj in scene_objects:
-        if obj.type != 'MESH':
+        if obj.type != 'MESH' and obj.type != 'EMPTY':
             debug(f"skipping non-mesh {obj.name}")
             continue
 
