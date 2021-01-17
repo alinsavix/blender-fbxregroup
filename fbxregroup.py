@@ -1021,6 +1021,25 @@ def cmd_kitops_batch(args):
     return
 
 
+# node wrangler gets called like:
+# bpy.context.space_data.context = 'MATERIAL'
+# bpy.ops.node.select(wait_to_deselect_others=False, mouse_x=889, mouse_y=505, extend=False, deselect_all=True)
+# bpy.ops.node.select(wait_to_deselect_others=False, mouse_x=889, mouse_y=537, extend=False, deselect_all=True)
+# bpy.context.space_data.params.directory = "/Users/jg378k/Documents/jg-blender-addons/botaniq_full/textures"
+# bpy.ops.node.nw_add_textures_for_principled(filepath="/Users/jg378k/Documents/jg-blender-addons/botaniq_full/textures/Bark_Pinus-pinaster_Normal.jpg", directory="/Users/jg378k/Documents/jg-blender-addons/botaniq_full/textures/", files=[{"name":"Bark_Pinus-pinaster_Diffuse.jpg", "name":"Bark_Pinus-pinaster_Diffuse.jpg"}, {"name":"Bark_Pinus-pinaster_Normal.jpg", "name":"Bark_Pinus-pinaster_Normal.jpg"}], relative_path=False)
+
+def cmd_preview_texture(args):
+        print("cmd_preview_texture")
+
+    if len(args.files) == 0:
+        print("command 'finalize' requires filenames to process")
+        sys.exit(1)
+
+    scene_path = "scenes/scenes/kitops_material_scene.blend"
+    bpy.ops.wm.open_mainfile(
+        filepath=scene_path, load_ui=False, use_scripts=False)
+
+
 # FIXME: Probably needs refactoring
 # FIXME: Probably needs a better name
 def cmd_finalize(args):
